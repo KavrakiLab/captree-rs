@@ -2,8 +2,7 @@
 #![feature(new_uninit)]
 
 use std::{
-    mem::{transmute, MaybeUninit},
-    ops::{Mul, ShlAssign},
+    ops::ShlAssign,
     simd::{LaneCount, Mask, Simd, SimdPartialOrd, SupportedLaneCount},
 };
 
@@ -124,6 +123,7 @@ impl<const D: usize, const N: usize> PkdTree<D, N> {
     }
 }
 
+#[cfg(test)]
 mod tests {
     use super::*;
 
