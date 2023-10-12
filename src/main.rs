@@ -4,7 +4,7 @@ use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 
 const N: usize = 1 << 22;
-const L: usize = 64;
+const L: usize = 32;
 const D: usize = 3;
 
 fn main() {
@@ -45,6 +45,15 @@ fn main() {
         }
         simd_needles.push(simd_pts);
     }
+
+    println!("testing for correctness...");
+    for (i, simd_needle) in simd_needles.iter().enumerate() {
+        let simd_idxs = kdt.query(simd_needle);
+        for l in 0..L {
+            assert_eq!(kdt.query1(seq_needles[i * L + l]), simd_idxs[l]);
+        }
+    }
+    println!("simd and sequential implementations are consistent with each other.");
 
     println!("testing for performance...");
     println!("testing sequential...");
