@@ -56,14 +56,28 @@ fn main() {
         simd_needles.push(simd_pts);
     }
 
+    let mut sum_approx_dist = 0.0;
+    let mut sum_exact_dist = 0.0;
     println!("testing for correctness...");
     for (i, simd_needle) in simd_needles.iter().enumerate() {
         let simd_idxs = kdt.query(simd_needle);
         for l in 0..L {
-            assert_eq!(kdt.query1(seq_needles[i * L + l]), simd_idxs[l]);
+            let seq_needle = seq_needles[i * L + l];
+            let q1 = kdt.query1(seq_needle);
+            assert_eq!(q1, simd_idxs[l]);
+            sum_exact_dist += kiddo_kdt
+                .nearest_one(&seq_needle, &kiddo::distance::squared_euclidean)
+                .0
+                .sqrt();
+            sum_approx_dist += dist(seq_needle, kdt.get_point(q1));
         }
     }
     println!("simd and sequential implementations are consistent with each other.");
+    println!(
+        "mean exact distance: {}; mean approx dist: {}",
+        sum_exact_dist / seq_needles.len() as f32,
+        sum_approx_dist / seq_needles.len() as f32
+    );
 
     println!("testing for performance...");
     println!("testing sequential...");
@@ -108,4 +122,12 @@ fn main() {
         "speedup: {}%",
         (100.0 * seq_time * (1.0 / simd_time - 1.0 / seq_time)) as u64
     )
+}
+
+fn dist<const D: usize>(a: [f32; D], b: [f32; D]) -> f32 {
+    a.into_iter()
+        .zip(b.into_iter())
+        .map(|(x1, x2)| (x1 - x2).powi(2))
+        .sum::<f32>()
+        .sqrt()
 }
