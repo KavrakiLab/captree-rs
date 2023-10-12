@@ -64,7 +64,11 @@ fn main() {
     }
     let toc = Instant::now();
     let seq_time = (toc.duration_since(tic)).as_secs_f64();
-    println!("completed sequential in {:?}s", seq_time);
+    println!(
+        "completed sequential in {:?}s ({} qps)",
+        seq_time,
+        (simd_needles.len() as f64 / seq_time) as u64
+    );
 
     let tic = Instant::now();
     for needle in &simd_needles {
@@ -72,7 +76,11 @@ fn main() {
     }
     let toc = Instant::now();
     let simd_time = (toc.duration_since(tic)).as_secs_f64();
-    println!("completed simd in {:?}s", simd_time);
+    println!(
+        "completed simd in {:?}s, ({} qps)",
+        simd_time,
+        (simd_needles.len() as f64 / simd_time) as u64
+    );
 
     println!(
         "speedup: {}%",
