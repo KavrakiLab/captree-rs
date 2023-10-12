@@ -184,4 +184,19 @@ mod tests {
         assert_eq!(kdt.query1([3.5]), 2);
         assert_eq!(kdt.query1([4.5]), 2);
     }
+
+    #[test]
+    fn a_power_of_two() {
+        let mut points = [[0.0], [2.0], [4.0], [6.0]];
+        let kdt = PkdTree::new(&mut points);
+
+        println!("{kdt:?}");
+
+        assert_eq!(kdt.query1([-1.0]), 0);
+        assert_eq!(kdt.query1([0.5]), 0);
+        assert_eq!(kdt.query1([1.5]), 1);
+        assert_eq!(kdt.query1([2.5]), 1);
+        assert_eq!(kdt.query1([3.5]), 2);
+        assert_eq!(kdt.query1([4.5]), 2);
+    }
 }
