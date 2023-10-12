@@ -6,5 +6,11 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+kiddo = "2.1.2"
 rand = "0.8.5"
 rand_chacha = "0.3.1"
+
+[profile.release]
+lto = true
+debug = false
+codegen-units=1

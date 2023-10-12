@@ -3,14 +3,16 @@ use std::{hint::black_box, time::Instant};
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 
-const N: usize = 1 << 16;
+const N: usize = 1 << 12;
 const L: usize = 16;
 const D: usize = 3;
 
 fn main() {
+    println!("N={N}, L={L}, D={D}");
     let mut rng = ChaCha20Rng::seed_from_u64(2707);
 
-    println!("generating K-D tree...");
+    println!("generating random points...");
+    let tic = Instant::now();
     let starting_points: Box<[[f32; D]; N]> = (0..N)
         .map(|_| {
             [
@@ -25,7 +27,15 @@ fn main() {
 
     let mut sp_clone = starting_points.clone();
 
+    println!("generating PKDT...");
     let kdt = pkdt::PkdTree::new(&mut sp_clone);
+    println!("generated tree in {:?}", Instant::now().duration_since(tic));
+
+    println!("generating competitor's KDT");
+    let mut kiddo_kdt = kiddo::KdTree::new();
+    for pt in sp_clone.iter() {
+        kiddo_kdt.add(pt, 0);
+    }
 
     let mut seq_needles = Vec::new();
     let mut simd_needles = Vec::new();
@@ -57,6 +67,18 @@ fn main() {
 
     println!("testing for performance...");
     println!("testing sequential...");
+
+    let tic = Instant::now();
+    for needle in &seq_needles {
+        black_box(kiddo_kdt.nearest_one(needle, &kiddo::distance::squared_euclidean));
+    }
+    let toc = Instant::now();
+    let seq_time = (toc.duration_since(tic)).as_secs_f64();
+    println!(
+        "completed kiddo in {:?}s ({} qps)",
+        seq_time,
+        (simd_needles.len() as f64 / seq_time) as u64
+    );
 
     let tic = Instant::now();
     for needle in seq_needles {
