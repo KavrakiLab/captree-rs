@@ -80,12 +80,15 @@ impl<const D: usize, const N: usize> PkdTree<D, N> {
         let mut test_idxs: Simd<usize, L> = Simd::splat(0);
 
         // Advance the tests forward
-        for j in 0..(N.ilog2() as usize) {
-            let d = j % D;
+        for i in 0..N.ilog2() as usize {
+            // TODO do not bounds check on this gather
             let relevant_tests: Simd<f32, L> =
                 Simd::gather_or_default(self.tests.as_ref(), test_idxs);
-            let needle_values = Simd::from_slice(&needles[d]);
+            // TODO do not bounds check on this either
+            let needle_values = Simd::from_slice(&needles[i % D]);
             let cmp_results: Mask<isize, L> = needle_values.simd_lt(relevant_tests).into();
+
+            // TODO is there a faster way than using a conditional select?
             test_idxs.shl_assign(Simd::splat(1));
             test_idxs += cmp_results.select(Simd::splat(1), Simd::splat(2));
         }
