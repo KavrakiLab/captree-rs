@@ -3,8 +3,8 @@ use std::{hint::black_box, time::Instant};
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 
-const N: usize = 1 << 22;
-const L: usize = 32;
+const N: usize = 1 << 16;
+const L: usize = 16;
 const D: usize = 3;
 
 fn main() {
@@ -76,6 +76,6 @@ fn main() {
 
     println!(
         "speedup: {}%",
-        ((seq_time - simd_time) * 100.0 / simd_time) as u64
+        (100.0 * seq_time * (1.0 / simd_time - 1.0 / seq_time)) as u64
     )
 }
