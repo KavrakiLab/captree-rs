@@ -6,6 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+hdf5 = { git = "https://github.com/aldanor/hdf5-rust", rev = "26046fb" }
 kiddo = "2.1.2"
 rand = "0.8.5"
 rand_chacha = "0.3.1"
@@ -13,4 +14,4 @@ rand_chacha = "0.3.1"
 [profile.release]
 lto = true
 debug = false
-codegen-units=1
+codegen-units = 1
