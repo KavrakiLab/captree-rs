@@ -15,4 +15,3 @@ rand_chacha = "0.3.1"
 [profile.release]
 lto = true
 debug = false
-codegen-units = 1
