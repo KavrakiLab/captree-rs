@@ -7,7 +7,7 @@ use std::{
     time::Instant,
 };
 
-use hdf5::{File, H5Type, Result};
+use hdf5::{File, Result};
 use rand::Rng;
 
 pub fn run_benchmark<const D: usize, const L: usize>(
@@ -134,23 +134,12 @@ fn dist<const D: usize>(a: [f32; D], b: [f32; D]) -> f32 {
 
 /// Load a pointcloud as a vector of 3-d float arrays from a HDF5 file located at `pointcloud_path`.
 pub fn load_pointcloud(pointcloud_path: impl AsRef<Path>) -> Result<Vec<[f32; 3]>> {
-    // TODO: Extend with radius for variable point size?
-    #[derive(H5Type, Debug, Clone)]
-    #[repr(C)]
-    struct Point {
-        x: f32,
-        y: f32,
-        z: f32,
-    }
-
-    impl From<Point> for [f32; 3] {
-        fn from(p: Point) -> Self {
-            [p.x, p.y, p.z]
-        }
-    }
-
     let file = File::open(pointcloud_path)?;
     let dataset = file.dataset("pointcloud/points")?;
-    let points = dataset.read_1d::<Point>()?;
-    Ok(points.mapv(|p| p.into()).into_raw_vec())
+    let points = dataset.read_2d::<f32>()?;
+    Ok(points
+        .rows()
+        .into_iter()
+        .map(|r| [r[0], r[1], r[2]])
+        .collect())
 }
