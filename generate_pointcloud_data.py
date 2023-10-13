@@ -36,7 +36,6 @@ class PointcloudParams:
 class SampleWorld(World):
   camera: Camera = field(init=False)
   sensor_group: GroupABC = field(init=False)
-  output_group: GroupABC = field(init=False)
   robot_params: InitVar[RobotParams | None] = None
   pointcloud_params: InitVar[PointcloudParams | None] = None
 
@@ -53,7 +52,6 @@ class SampleWorld(World):
       self.setup_collision_filter()
       self.camera = process_camera(robot.cameras[robot_params.sensor_link], robot_skel)
       self.sensor_group = groups[robot_params.sensor_group]
-      self.output_group = groups[robot_params.output_group]
 
   @property
   def robot(self) -> Skeleton:
@@ -95,12 +93,11 @@ def main(
       problem_name, (torso_resolution, head_resolution), num_points
   )
   print("Setting up robot and scene...")
-  world = SampleWorld(PyBulletSimulator(), robot_params, pointcloud_params)
+  world = SampleWorld(PyBulletSimulator(), {}, robot_params, pointcloud_params)
 
   def setup_clone(w: SampleWorld) -> SampleWorld:
     w.camera = world.camera
     w.sensor_group = world.sensor_group
-    w.output_group = world.output_group
     return w
 
   with WorldPool(world, world_setup_fn=setup_clone, show_progress=show_progress) as wp:
@@ -131,7 +128,7 @@ def main(
             f"{robot_params.name}",
             f"{pointcloud_params.problem_name}",
             f"r{pointcloud_params.resolution[0]}x{pointcloud_params.resolution[1]}",
-            f"n{pointcloud_params.num_points}",
+            f"n{pointcloud_params.num_points}.h5",
         ])
     )
   print(f"Saving pointcloud to {output_path}")
