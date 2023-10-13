@@ -1,2 +1,3 @@
 [workspace]
 members = ["pkdt", "pkdt_bench"]
+resolver = "2"

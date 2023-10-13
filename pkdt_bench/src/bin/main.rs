@@ -11,7 +11,6 @@ const D: usize = 3;
 fn main() {
     let args: Vec<String> = env::args().collect();
     let mut rng = ChaCha20Rng::seed_from_u64(2707);
-    let tic = Instant::now();
     let starting_points: Box<Vec<[f32; D]>> = if args.len() > 1 {
         println!("Loading pointcloud from {}", &args[1]);
         Box::new(load_pointcloud(Path::new(&args[1])).unwrap())
@@ -34,14 +33,20 @@ fn main() {
     let mut sp_clone = starting_points.clone();
 
     println!("generating PKDT...");
+    let tic = Instant::now();
     let kdt = pkdt::PkdTree::new(&mut sp_clone);
     println!("generated tree in {:?}", Instant::now().duration_since(tic));
 
     println!("generating competitor's KDT");
+    let tic = Instant::now();
     let mut kiddo_kdt = kiddo::KdTree::new();
     for pt in sp_clone.iter() {
         kiddo_kdt.add(pt, 0);
     }
+    println!(
+        "generated kiddo tree in {:?}",
+        Instant::now().duration_since(tic)
+    );
 
     let mut seq_needles = Vec::new();
     let mut simd_needles = Vec::new();
