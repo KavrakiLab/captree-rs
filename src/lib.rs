@@ -1,5 +1,6 @@
 #![feature(portable_simd)]
 #![feature(new_uninit)]
+#![warn(clippy::pedantic)]
 
 use std::simd::{LaneCount, Mask, Simd, SimdConstPtr, SimdPartialOrd, SupportedLaneCount};
 
@@ -9,8 +10,7 @@ use std::simd::{LaneCount, Mask, Simd, SimdConstPtr, SimdPartialOrd, SupportedLa
 /// # Generic parameters
 ///
 /// - `D`: The dimension of the space.
-/// - `N`: The number of points in the tree.
-pub struct PkdTree<const D: usize, const N: usize> {
+pub struct PkdTree<const D: usize> {
     /// The test values for determining which part of the tree to enter.
     ///
     /// The first element of `tests` should be the first value to test against.
@@ -18,19 +18,22 @@ pub struct PkdTree<const D: usize, const N: usize> {
     /// At the `i`-th test performed in sequence of the traversal, if we are less than `tests[idx]`,
     /// we advance to `2 * idx + 1`; otherwise, we go to `2 * idx + 2`.
     ///
-    /// The length of `tests` must be `N`, rounded up to the next power of 2.
+    /// The length of `tests` must be `N`, rounded up to the next power of 2, minus one.
     tests: Box<[f32]>,
     /// The relevant points at the center of each volume divided by `tests`.
-    points: Box<[[f32; N]; D]>,
+    ///
+    /// If there are `N` points in the tree, let `N2` be `N` rounded up to the next power of 2.
+    /// Then `points` has length `N * D`.
+    points: Box<[f32]>,
 }
 
-impl<const D: usize, const N: usize> PkdTree<D, N> {
+impl<const D: usize> PkdTree<D> {
     /// Construct a new `PkdTree` containing all the points in `points`.
     /// For performance, this function changes the ordering of `points`, but does not affect the
     /// set of points inside it.
     ///
     /// TODO: do all our sorting on the allocation that we return?
-    pub fn new(points: &mut [[f32; D]; N]) -> Self {
+    pub fn new(points: &mut Vec<[f32; D]>) -> Self {
         /// Recursive helper function to sort the points for the KD tree and generate the tests.
         fn recur_sort_points<const D: usize>(
             points: &mut [[f32; D]],
@@ -49,14 +52,15 @@ impl<const D: usize, const N: usize> PkdTree<D, N> {
             }
         }
 
-        let mut tests =
-            vec![f32::INFINITY; points.len().next_power_of_two() - 1].into_boxed_slice();
+        let n2 = points.len().next_power_of_two();
+
+        let mut tests = vec![f32::INFINITY; n2 - 1].into_boxed_slice();
         recur_sort_points(points, tests.as_mut(), 0, 0);
 
-        let mut my_points = Box::new([[0.0; N]; D]);
+        let mut my_points = vec![f32::NAN; points.len() * D].into_boxed_slice();
         for (i, pt) in points.iter().enumerate() {
             for (d, value) in (*pt).into_iter().enumerate() {
-                my_points[d][i] = value;
+                my_points[d * n2 + i] = value;
             }
         }
 
@@ -66,6 +70,8 @@ impl<const D: usize, const N: usize> PkdTree<D, N> {
         }
     }
 
+    #[must_use]
+    #[allow(clippy::missing_panics_doc)]
     /// Get the indices of points which are closest to `needles`.
     ///
     /// TODO: refactor this to use `needles` as an out parameter as well, and shove the nearest
@@ -75,10 +81,12 @@ impl<const D: usize, const N: usize> PkdTree<D, N> {
         LaneCount<L>: SupportedLaneCount,
     {
         let mut test_idxs: Simd<usize, L> = Simd::splat(0);
+        let n2 = self.tests.len() + 1;
+        assert!(n2.is_power_of_two());
 
         // Advance the tests forward
-        for i in 0..N.next_power_of_two().ilog2() as usize {
-            let test_ptrs = Simd::splat(self.tests.as_ref() as *const [f32] as *const f32)
+        for i in 0..n2.ilog2() as usize {
+            let test_ptrs = Simd::splat((self.tests.as_ref() as *const [f32]).cast::<f32>())
                 .wrapping_add(test_idxs);
             let relevant_tests: Simd<f32, L> = unsafe { Simd::gather_ptr(test_ptrs) };
             let needle_values = Simd::from_array(needles[i % D]);
@@ -89,14 +97,18 @@ impl<const D: usize, const N: usize> PkdTree<D, N> {
             test_idxs += cmp_results.select(Simd::splat(1), Simd::splat(2));
         }
 
-        (test_idxs - Simd::splat(N.next_power_of_two() - 1)).into()
+        (test_idxs - Simd::splat(self.tests.len())).into()
     }
 
+    #[must_use]
+    #[allow(clippy::missing_panics_doc)]
     /// Get the access index of the point closest to `needle`
     pub fn query1(&self, needle: [f32; D]) -> usize {
-        // println!("query {needle:?}");
+        let n2 = self.tests.len() + 1;
+        assert!(n2.is_power_of_two());
+
         let mut test_idx = 0;
-        for i in 0..N.next_power_of_two().ilog2() as usize {
+        for i in 0..n2.ilog2() as usize {
             // println!("current idx: {test_idx}");
             let add = if needle[i % D] < (self.tests[test_idx]) {
                 1
@@ -107,16 +119,17 @@ impl<const D: usize, const N: usize> PkdTree<D, N> {
             test_idx += add;
         }
 
-        // println!("final test index: {test_idx}");
-        let lookup_idx = test_idx + 1 - N.next_power_of_two();
-        // println!("lookup index: {lookup_idx}");
-        lookup_idx
+        test_idx - self.tests.len()
     }
 
+    #[must_use]
+    #[allow(clippy::missing_panics_doc)]
     pub fn get_point(&self, id: usize) -> [f32; D] {
         let mut point = [0.0; D];
-        for d in 0..D {
-            point[d] = self.points[d][id];
+        let n2 = self.tests.len() + 1;
+        assert!(n2.is_power_of_two());
+        for (d, value) in point.iter_mut().enumerate() {
+            *value = self.points[d * n2 + id];
         }
 
         point
@@ -129,7 +142,7 @@ mod tests {
 
     #[test]
     fn single_query() {
-        let mut points = [
+        let mut points = vec![
             [0.1, 0.1],
             [0.1, 0.2],
             [0.5, 0.0],
@@ -154,7 +167,7 @@ mod tests {
 
     #[test]
     fn multi_query() {
-        let mut points = [
+        let mut points = vec![
             [0.1, 0.1],
             [0.1, 0.2],
             [0.5, 0.0],
@@ -172,7 +185,7 @@ mod tests {
 
     #[test]
     fn not_a_power_of_two() {
-        let mut points = [[0.0], [2.0], [4.0]];
+        let mut points = vec![[0.0], [2.0], [4.0]];
         let kdt = PkdTree::new(&mut points);
 
         println!("{kdt:?}");
@@ -187,7 +200,7 @@ mod tests {
 
     #[test]
     fn a_power_of_two() {
-        let mut points = [[0.0], [2.0], [4.0], [6.0]];
+        let mut points = vec![[0.0], [2.0], [4.0], [6.0]];
         let kdt = PkdTree::new(&mut points);
 
         println!("{kdt:?}");

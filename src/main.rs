@@ -1,5 +1,8 @@
-use std::{hint::black_box, time::Instant};
+mod pointcloud_io;
 
+use std::{env, hint::black_box, path::Path, time::Instant};
+
+use pointcloud_io::load_pointcloud;
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 
@@ -8,22 +11,27 @@ const L: usize = 16;
 const D: usize = 3;
 
 fn main() {
-    println!("N={N}, L={L}, D={D}");
+    let args: Vec<String> = env::args().collect();
     let mut rng = ChaCha20Rng::seed_from_u64(2707);
-
-    println!("generating random points...");
     let tic = Instant::now();
-    let starting_points: Box<[[f32; D]; N]> = (0..N)
-        .map(|_| {
-            [
-                rng.gen_range::<f32, _>(0.0..1.0),
-                rng.gen_range::<f32, _>(0.0..1.0),
-                rng.gen_range::<f32, _>(0.0..1.0),
-            ]
-        })
-        .collect::<Box<[[f32; 3]]>>()
-        .try_into()
-        .unwrap();
+    let starting_points: Box<Vec<[f32; D]>> = if args.len() > 1 {
+        println!("Loading pointcloud from {}", &args[1]);
+        Box::new(load_pointcloud(Path::new(&args[1])).unwrap())
+    } else {
+        println!("No pointcloud file! Using N={N}, L={L}, D={D}");
+        println!("generating random points...");
+        (0..N)
+            .map(|_| {
+                [
+                    rng.gen_range::<f32, _>(0.0..1.0),
+                    rng.gen_range::<f32, _>(0.0..1.0),
+                    rng.gen_range::<f32, _>(0.0..1.0),
+                ]
+            })
+            .collect::<Vec<[f32; D]>>()
+            .try_into()
+            .unwrap()
+    };
 
     let mut sp_clone = starting_points.clone();
 
@@ -126,7 +134,7 @@ fn main() {
 
 fn dist<const D: usize>(a: [f32; D], b: [f32; D]) -> f32 {
     a.into_iter()
-        .zip(b.into_iter())
+        .zip(b)
         .map(|(x1, x2)| (x1 - x2).powi(2))
         .sum::<f32>()
         .sqrt()
