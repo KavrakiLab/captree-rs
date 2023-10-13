@@ -29,4 +29,4 @@ To run the benchmark, do `cargo run --release`.
   not the worst.
 - Error distributions (approx neighbor distance / exact neighbor distance) as histograms.
 - A nice TikZ or SVG picture showing the data layout and traversal scheme.
-  ![](plot_sketches/sample_explanation_plot.jpg)
+  ![image explaining how this thing works](plot_sketches/sample_explanation_plot.jpg)
