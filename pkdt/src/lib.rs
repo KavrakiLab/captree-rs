@@ -33,7 +33,7 @@ impl<const D: usize> PkdTree<D> {
     /// set of points inside it.
     ///
     /// TODO: do all our sorting on the allocation that we return?
-    pub fn new(points: &mut Vec<[f32; D]>) -> Self {
+    pub fn new(points: &mut [[f32; D]]) -> Self {
         /// Recursive helper function to sort the points for the KD tree and generate the tests.
         fn recur_sort_points<const D: usize>(
             points: &mut [[f32; D]],
