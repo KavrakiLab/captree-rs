@@ -84,6 +84,7 @@ def main(
     head_resolution: float = 0.15,
     torso_resolution: float = 1.0,
     num_points: int = 400_000,
+    noise: float = 0.01,
     output_path: Path | None = None,
     show_progress: bool = True,
 ):
@@ -120,6 +121,7 @@ def main(
         ]],
         gather=partial(gather_pointcloud, pointcloud_params.num_points)
     ).result()
+    pointcloud += np.random.default_rng().uniform(low=-noise, high=noise, size=pointcloud.shape)
     end = time()
     print(f"Pointcloud time: {end-start}s", f"Pointcloud shape: {pointcloud.shape}")
   if output_path is None:
@@ -128,6 +130,7 @@ def main(
             f"{robot_params.name}",
             f"{pointcloud_params.problem_name}",
             f"r{pointcloud_params.resolution[0]}x{pointcloud_params.resolution[1]}",
+            f"e{noise}",
             f"n{pointcloud_params.num_points}.h5",
         ])
     )
