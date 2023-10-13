@@ -87,11 +87,11 @@ pub fn run_benchmark<const D: usize, const L: usize>(
         black_box(kiddo_kdt.nearest_one(needle, &kiddo::distance::squared_euclidean));
     }
     let toc = Instant::now();
-    let seq_time = (toc.duration_since(tic)).as_secs_f64();
+    let kiddo_time = (toc.duration_since(tic)).as_secs_f64();
     println!(
         "completed kiddo in {:?}s ({} qps)",
-        seq_time,
-        (simd_needles.len() as f64 / seq_time) as u64
+        kiddo_time,
+        (simd_needles.len() as f64 / kiddo_time) as u64
     );
 
     let tic = Instant::now();
@@ -119,8 +119,12 @@ pub fn run_benchmark<const D: usize, const L: usize>(
     );
 
     println!(
-        "speedup: {}%",
-        (100.0 * seq_time * (1.0 / simd_time - 1.0 / seq_time)) as u64
+        "speedup: {}% vs single-query",
+        (100.0 * (seq_time / simd_time - 1.0)) as u64
+    );
+    println!(
+        "speedup: {}% vs kiddo",
+        (100.0 * (kiddo_time / simd_time - 1.0)) as u64
     )
 }
 
