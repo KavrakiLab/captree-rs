@@ -136,13 +136,7 @@ def main(
   with File(output_path, "w") as output_file:
     pointcloud_group = output_file.create_group("pointcloud")
     pointcloud_dset = pointcloud_group.create_dataset(
-        "points",
-        (
-            pointcloud_params.resolution[0],
-            pointcloud_params.resolution[1],
-            pointcloud_params.num_points
-        ),
-        dtype=np.float32
+        "points", (pointcloud_params.num_points, 3), dtype=np.float32
     )
     pointcloud_dset[...] = pointcloud
 
