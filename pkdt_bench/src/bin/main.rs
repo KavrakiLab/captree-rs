@@ -4,7 +4,7 @@ use pkdt_bench::{load_pointcloud, run_benchmark};
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 
-const N: usize = 1 << 12;
+const N: usize = 4096;
 const L: usize = 16;
 const D: usize = 3;
 
@@ -28,5 +28,5 @@ fn main() {
             .collect::<Vec<[f32; D]>>()
     };
 
-    run_benchmark::<D, L>(&starting_points, &mut rng);
+    run_benchmark::<D, L>(&starting_points, &mut rng, 1 << 20);
 }

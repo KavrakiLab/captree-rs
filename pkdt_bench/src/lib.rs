@@ -10,8 +10,11 @@ use std::{
 use hdf5::{File, H5Type, Result};
 use rand::Rng;
 
-pub fn run_benchmark<const D: usize, const L: usize>(points: &[[f32; D]], rng: &mut impl Rng)
-where
+pub fn run_benchmark<const D: usize, const L: usize>(
+    points: &[[f32; D]],
+    rng: &mut impl Rng,
+    n_trials: usize,
+) where
     LaneCount<L>: SupportedLaneCount,
 {
     let sp_clone = Box::from(points);
@@ -37,7 +40,7 @@ where
 
     println!("generating test values...");
 
-    for _ in 0..1 << 16 {
+    for _ in 0..n_trials / L {
         let mut simd_pts = [[0.0; L]; D];
         for l in 0..L {
             let mut seq_needle = [0.0; D];
@@ -50,6 +53,8 @@ where
         }
         simd_needles.push(simd_pts);
     }
+
+    assert_eq!(seq_needles.len(), simd_needles.len() * L);
 
     let mut sum_approx_dist = 0.0;
     let mut sum_exact_dist = 0.0;
@@ -90,7 +95,7 @@ where
     );
 
     let tic = Instant::now();
-    for needle in seq_needles {
+    for &needle in &seq_needles {
         black_box(kdt.query1(needle));
     }
     let toc = Instant::now();
@@ -98,7 +103,7 @@ where
     println!(
         "completed sequential in {:?}s ({} qps)",
         seq_time,
-        (simd_needles.len() as f64 / seq_time) as u64
+        (seq_needles.len() as f64 / seq_time) as u64
     );
 
     let tic = Instant::now();
@@ -110,7 +115,7 @@ where
     println!(
         "completed simd in {:?}s, ({} qps)",
         simd_time,
-        (simd_needles.len() as f64 / simd_time) as u64
+        (seq_needles.len() as f64 / simd_time) as u64
     );
 
     println!(
@@ -128,7 +133,7 @@ fn dist<const D: usize>(a: [f32; D], b: [f32; D]) -> f32 {
 }
 
 /// Load a pointcloud as a vector of 3-d float arrays from a HDF5 file located at `pointcloud_path`.
-pub fn load_pointcloud(pointcloud_path: &Path) -> Result<Vec<[f32; 3]>> {
+pub fn load_pointcloud(pointcloud_path: impl AsRef<Path>) -> Result<Vec<[f32; 3]>> {
     // TODO: Extend with radius for variable point size?
     #[derive(H5Type, Debug, Clone)]
     #[repr(C)]

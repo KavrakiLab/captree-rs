@@ -2,7 +2,10 @@
 #![feature(new_uninit)]
 #![warn(clippy::pedantic)]
 
-use std::simd::{LaneCount, Mask, Simd, SimdConstPtr, SimdPartialOrd, SupportedLaneCount};
+use std::{
+    hint::unreachable_unchecked,
+    simd::{LaneCount, Mask, Simd, SimdConstPtr, SimdPartialOrd, SupportedLaneCount},
+};
 
 #[derive(Clone, Debug, PartialEq)]
 /// A power-of-two KD-tree.
@@ -23,7 +26,7 @@ pub struct PkdTree<const D: usize> {
     /// The relevant points at the center of each volume divided by `tests`.
     ///
     /// If there are `N` points in the tree, let `N2` be `N` rounded up to the next power of 2.
-    /// Then `points` has length `N * D`.
+    /// Then `points` has length `N2 * D`.
     points: Box<[f32]>,
 }
 
@@ -88,7 +91,12 @@ impl<const D: usize> PkdTree<D> {
     {
         let mut test_idxs: Simd<usize, L> = Simd::splat(0);
         let n2 = self.tests.len() + 1;
-        assert!(n2.is_power_of_two());
+        debug_assert!(n2.is_power_of_two());
+
+        // in release mode, tell the compiler about this invariant
+        if !n2.is_power_of_two() {
+            unsafe { unreachable_unchecked() };
+        }
 
         // Advance the tests forward
         for i in 0..n2.ilog2() as usize {
