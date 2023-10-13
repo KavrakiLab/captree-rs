@@ -1,8 +1,6 @@
-mod pointcloud_io;
-
 use std::{env, hint::black_box, path::Path, time::Instant};
 
-use pointcloud_io::load_pointcloud;
+use pkdt_bench::load_pointcloud;
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 
