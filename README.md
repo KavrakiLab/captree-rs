@@ -6,7 +6,7 @@ To run the benchmark, do `cargo run --release`.
 
 ## TODO
 
-- Support non-power-of-2 trees.
+- ~~Support non-power-of-2 trees.~~
 - Develop $O(n log n)$ algorithm for building the tree.
 - Get an error distribution of (approx neighbor distance / exact neighbor distance)
 - Make crosswise table of parallel speedups by lane count and tree size

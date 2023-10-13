@@ -14,11 +14,11 @@ pub fn run_benchmark<const D: usize, const L: usize>(points: &[[f32; D]], rng: &
 where
     LaneCount<L>: SupportedLaneCount,
 {
-    let mut sp_clone = Box::from(points);
+    let sp_clone = Box::from(points);
 
     println!("generating PKDT...");
     let tic = Instant::now();
-    let kdt = pkdt::PkdTree::new(&mut sp_clone);
+    let kdt = pkdt::PkdTree::new(&sp_clone);
     println!("generated tree in {:?}", Instant::now().duration_since(tic));
 
     println!("generating competitor's KDT");

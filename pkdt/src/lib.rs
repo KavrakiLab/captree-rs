@@ -28,12 +28,13 @@ pub struct PkdTree<const D: usize> {
 }
 
 impl<const D: usize> PkdTree<D> {
+    #[must_use]
     /// Construct a new `PkdTree` containing all the points in `points`.
     /// For performance, this function changes the ordering of `points`, but does not affect the
     /// set of points inside it.
     ///
     /// TODO: do all our sorting on the allocation that we return?
-    pub fn new(points: &mut [[f32; D]]) -> Self {
+    pub fn new(points: &[[f32; D]]) -> Self {
         /// Recursive helper function to sort the points for the KD tree and generate the tests.
         fn recur_sort_points<const D: usize>(
             points: &mut [[f32; D]],
@@ -41,6 +42,7 @@ impl<const D: usize> PkdTree<D> {
             d: usize,
             i: usize,
         ) {
+            // TODO make this algorithm O(n log n) instead of O(n^2 log n)
             if points.len() > 1 {
                 points.sort_by(|a, b| a[d].partial_cmp(&b[d]).unwrap());
                 let median = (points[points.len() / 2 - 1][d] + points[points.len() / 2][d]) / 2.0;
@@ -55,10 +57,14 @@ impl<const D: usize> PkdTree<D> {
         let n2 = points.len().next_power_of_two();
 
         let mut tests = vec![f32::INFINITY; n2 - 1].into_boxed_slice();
-        recur_sort_points(points, tests.as_mut(), 0, 0);
 
-        let mut my_points = vec![f32::NAN; points.len() * D].into_boxed_slice();
-        for (i, pt) in points.iter().enumerate() {
+        // hack: just pad with infinity to make it a power of 2
+        let mut new_points = vec![[f32::INFINITY; D]; n2];
+        new_points[..points.len()].copy_from_slice(points);
+        recur_sort_points(new_points.as_mut(), tests.as_mut(), 0, 0);
+
+        let mut my_points = vec![f32::NAN; n2 * D].into_boxed_slice();
+        for (i, pt) in new_points.iter().enumerate() {
             for (d, value) in (*pt).into_iter().enumerate() {
                 my_points[d * n2 + i] = value;
             }
@@ -142,7 +148,7 @@ mod tests {
 
     #[test]
     fn single_query() {
-        let mut points = vec![
+        let points = vec![
             [0.1, 0.1],
             [0.1, 0.2],
             [0.5, 0.0],
@@ -152,7 +158,7 @@ mod tests {
             [0.6, 0.2],
             [0.7, 0.8],
         ];
-        let kdt = PkdTree::new(&mut points);
+        let kdt = PkdTree::new(&points);
 
         println!("testing for correctness...");
 
@@ -167,7 +173,7 @@ mod tests {
 
     #[test]
     fn multi_query() {
-        let mut points = vec![
+        let points = vec![
             [0.1, 0.1],
             [0.1, 0.2],
             [0.5, 0.0],
@@ -177,7 +183,7 @@ mod tests {
             [0.6, 0.2],
             [0.7, 0.8],
         ];
-        let kdt = PkdTree::new(&mut points);
+        let kdt = PkdTree::new(&points);
 
         let needles = [[-1.0, 2.0], [-1.0, 2.0]];
         assert_eq!(kdt.query(&needles), [0, points.len() - 1]);
@@ -185,8 +191,8 @@ mod tests {
 
     #[test]
     fn not_a_power_of_two() {
-        let mut points = vec![[0.0], [2.0], [4.0]];
-        let kdt = PkdTree::new(&mut points);
+        let points = vec![[0.0], [2.0], [4.0]];
+        let kdt = PkdTree::new(&points);
 
         println!("{kdt:?}");
 
@@ -200,8 +206,8 @@ mod tests {
 
     #[test]
     fn a_power_of_two() {
-        let mut points = vec![[0.0], [2.0], [4.0], [6.0]];
-        let kdt = PkdTree::new(&mut points);
+        let points = vec![[0.0], [2.0], [4.0], [6.0]];
+        let kdt = PkdTree::new(&points);
 
         println!("{kdt:?}");
 
