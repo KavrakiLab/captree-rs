@@ -7,7 +7,7 @@ To run the benchmark, do `cargo run --release`.
 ## TODO
 
 - ~~Support non-power-of-2 trees.~~
-- Develop $O(n log n)$ algorithm for building the tree.
+- Develop $O(n \log n)$ algorithm for building the tree.
 - Get an error distribution of (approx neighbor distance / exact neighbor distance)
 - Make crosswise table of parallel speedups by lane count and tree size
 - Generalize benchmarking approach for arbitrary nearest-neighbors structures and test against the
@@ -20,6 +20,8 @@ To run the benchmark, do `cargo run --release`.
 - Develop probabilistic argument about error distribution (makes paper actually readable)
 - Develop argument about appropriate sphere affordance to reduce likelihood of collision
 - Extend this approach to $k$-nearest-neighbors?
+- Handle points with the same values along one axis
+,
 
 ### The figures I'm looking for
 
