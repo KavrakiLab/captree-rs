@@ -1,4 +1,5 @@
 from dataclasses import InitVar, dataclass, field
+from functools import partial
 from itertools import product
 from pathlib import Path
 from time import time
@@ -70,12 +71,11 @@ def sample_pointcloud(q: NDArray, *, world: SampleWorld) -> NDArray:
   return world.sim.take_image(world.camera, [world.robot]).point_cloud  # type: ignore
 
 
-def gather_pointcloud(*pointcloud_samples) -> NDArray:
+def gather_pointcloud(num_points: int, *pointcloud_samples) -> NDArray:
   aggregate_cloud = np.concatenate(pointcloud_samples)
   # TODO: Parameterize the resolution
   cloud_mesh = pointcloud_to_mesh(aggregate_cloud, 0.005)
-  # TODO: Parameterize the point count
-  return mesh_to_sampled_pointcloud(cloud_mesh, 10000)
+  return mesh_to_sampled_pointcloud(cloud_mesh, num_points)
 
 
 def main(
@@ -121,7 +121,7 @@ def main(
                 np.arange(mins[2], maxes[2], head_resolution)
             )
         ]],
-        gather=gather_pointcloud
+        gather=partial(gather_pointcloud, pointcloud_params.num_points)
     ).result()
     end = time()
     print(f"Pointcloud time: {end-start}s", f"Pointcloud shape: {pointcloud.shape}")
