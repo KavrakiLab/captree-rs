@@ -4,7 +4,7 @@ use pkdt_bench::{load_pointcloud, run_benchmark};
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 
-const N: usize = 4096;
+const N: usize = 1 << 14;
 const L: usize = 16;
 const D: usize = 3;
 
