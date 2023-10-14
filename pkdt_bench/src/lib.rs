@@ -35,26 +35,7 @@ pub fn run_benchmark<const D: usize, const L: usize>(
         Instant::now().duration_since(tic)
     );
 
-    let mut seq_needles = Vec::new();
-    let mut simd_needles = Vec::new();
-
-    println!("generating test values...");
-
-    for _ in 0..n_trials / L {
-        let mut simd_pts = [[0.0; L]; D];
-        for l in 0..L {
-            let mut seq_needle = [0.0; D];
-            for d in 0..3 {
-                let value = rng.gen_range::<f32, _>(0.0..1.0);
-                seq_needle[d] = value;
-                simd_pts[d][l] = value;
-            }
-            seq_needles.push(seq_needle);
-        }
-        simd_needles.push(simd_pts);
-    }
-
-    assert_eq!(seq_needles.len(), simd_needles.len() * L);
+    let (seq_needles, simd_needles) = make_needles(rng, n_trials);
 
     let mut sum_approx_dist = 0.0;
     let mut sum_exact_dist = 0.0;
@@ -143,6 +124,40 @@ pub fn measure_error<const D: usize, const L: usize>(
         kiddo_kdt.add(pt, 0);
     }
 
+    let (seq_needles, simd_needles) = make_needles(rng, n_trials);
+
+    for (i, simd_needle) in simd_needles.iter().enumerate() {
+        let simd_idxs = kdt.query(simd_needle);
+        for l in 0..L {
+            let seq_needle = seq_needles[i * L + l];
+            let q1 = kdt.query1(seq_needle);
+            assert_eq!(q1, simd_idxs[l]);
+            let exact_dist = kiddo_kdt
+                .nearest_one(&seq_needle, &kiddo::distance::squared_euclidean)
+                .0
+                .sqrt();
+            let approx_dist = dist(seq_needle, kdt.get_point(q1));
+            let rel_error = approx_dist / exact_dist - 1.0;
+            println!("{seq_needle:?}\t{exact_dist}\t{approx_dist}\t{rel_error}");
+        }
+    }
+}
+
+/// Generate some randomized numbers for us to benchmark against.
+///
+/// # Generic parameters
+///
+/// - `D`: the dimension of the space
+/// - `L`: the number of SIMD lanes
+///
+/// # Returns
+///
+/// Returns a pair `(seq_needles, simd_needles)`, where `seq_needles` is correctly shaped for
+/// sequential querying and `simd_needles` is correctly shaped for SIMD querying.
+fn make_needles<const D: usize, const L: usize>(
+    rng: &mut impl Rng,
+    n_trials: usize,
+) -> (Vec<[f32; D]>, Vec<[[f32; L]; D]>) {
     let mut seq_needles = Vec::new();
     let mut simd_needles = Vec::new();
 
@@ -162,21 +177,7 @@ pub fn measure_error<const D: usize, const L: usize>(
 
     assert_eq!(seq_needles.len(), simd_needles.len() * L);
 
-    for (i, simd_needle) in simd_needles.iter().enumerate() {
-        let simd_idxs = kdt.query(simd_needle);
-        for l in 0..L {
-            let seq_needle = seq_needles[i * L + l];
-            let q1 = kdt.query1(seq_needle);
-            assert_eq!(q1, simd_idxs[l]);
-            let exact_dist = kiddo_kdt
-                .nearest_one(&seq_needle, &kiddo::distance::squared_euclidean)
-                .0
-                .sqrt();
-            let approx_dist = dist(seq_needle, kdt.get_point(q1));
-            let rel_error = approx_dist / exact_dist - 1.0;
-            println!("{seq_needle:?}\t{exact_dist}\t{approx_dist}\t{rel_error}");
-        }
-    }
+    (seq_needles, simd_needles)
 }
 
 fn dist<const D: usize>(a: [f32; D], b: [f32; D]) -> f32 {
