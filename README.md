@@ -1,5 +1,7 @@
 # SIMD-accelerated Approximate Nearest Neighbors
 
+It's one thing to be wrong and something else entirely to be wrong _fast_.
+
 ## Usage
 
 To run the benchmark, do `cargo run --release --bin bench path/to/my_pointcloud.hd5`.
