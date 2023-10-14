@@ -1,5 +1,5 @@
 #![feature(portable_simd)]
-#![feature(is_sorted)]
+#![feature(new_uninit)]
 #![warn(clippy::pedantic)]
 
 use std::{
@@ -37,111 +37,39 @@ impl<const D: usize> PkdTree<D> {
     /// set of points inside it.
     ///
     /// TODO: do all our sorting on the allocation that we return?
-    ///
-    /// # Panics
-    ///
-    /// This function may panic if any of the points has a non-finite value.
     pub fn new(points: &[[f32; D]]) -> Self {
-        // hack to copy empty vectors
-        const EMPTY_VEC: Vec<usize> = Vec::new();
-
         /// Recursive helper function to sort the points for the KD tree and generate the tests.
-        fn recur_partition<'a, const D: usize>(
-            points: &impl Fn(usize) -> &'a [f32; D],
+        fn recur_sort_points<const D: usize>(
+            points: &mut [[f32; D]],
             tests: &mut [f32],
-            argsorts: &mut [Vec<usize>],
             d: usize,
             i: usize,
-            l: usize,
-            r: usize,
         ) {
-            for (d2, argsort) in argsorts.iter().enumerate() {
-                debug_assert!(
-                    argsort[l..r].is_sorted_by(|&a, &b| points(a)[d2].partial_cmp(&points(b)[d2]))
-                );
+            // TODO make this algorithm O(n log n) instead of O(n^2 log n)
+            if points.len() > 1 {
+                points.sort_by(|a, b| a[d].partial_cmp(&b[d]).unwrap());
+                let median = (points[points.len() / 2 - 1][d] + points[points.len() / 2][d]) / 2.0;
+                tests[i] = median;
+                let next_dim = (d + 1) % D;
+                let (lhs, rhs) = points.split_at_mut(points.len() / 2);
+                recur_sort_points(lhs, tests, next_dim, 2 * i + 1);
+                recur_sort_points(rhs, tests, next_dim, 2 * i + 2);
             }
-
-            if r - l < 2 {
-                return;
-            }
-
-            // indices for finding the ID of the points closest to the test plane
-            let med_hi_idx = (l + r) / 2;
-            let med_lo_idx = med_hi_idx - 1;
-
-            debug_assert_eq!(med_hi_idx - l, r - med_hi_idx);
-
-            // IDs of points closest to the test plane
-            let med_lo_id = argsorts[d][med_lo_idx];
-            let med_hi_id = argsorts[d][med_hi_idx];
-
-            tests[i] = (points(med_lo_id)[d] + points(med_hi_id)[d]) / 2.0;
-
-            // partition argsorts by this test
-            for (d2, argsort) in argsorts.iter_mut().enumerate() {
-                if d2 == d {
-                    continue;
-                }
-                let mut more_buf = Vec::with_capacity((r - l) / 2);
-
-                let mut less_buf_idx = l;
-                for j in l..r {
-                    let arg = argsort[j];
-                    debug_assert_ne!(points(arg)[d], tests[i]);
-                    if points(arg)[d] < tests[i] {
-                        argsort[less_buf_idx] = arg;
-                        less_buf_idx += 1;
-                    } else {
-                        more_buf.push(arg);
-                    }
-                }
-
-                assert_eq!(less_buf_idx - l, more_buf.len());
-                argsort[med_hi_idx..r].copy_from_slice(&more_buf);
-            }
-
-            let next_d = (d + 1) % D;
-            recur_partition(points, tests, argsorts, next_d, 2 * i + 1, l, med_hi_idx);
-            recur_partition(points, tests, argsorts, next_d, 2 * i + 2, med_hi_idx, r);
         }
 
         let n2 = points.len().next_power_of_two();
 
         let mut tests = vec![f32::INFINITY; n2 - 1].into_boxed_slice();
 
-        let mut argsorts = [EMPTY_VEC; D];
-
-        let inf = [f32::INFINITY; D];
-        let points_fn = &|idx| points.get(idx).unwrap_or(&inf);
-        for (d, argsort) in argsorts.iter_mut().enumerate() {
-            *argsort = (0..n2).collect();
-            argsort
-                .sort_unstable_by(|&a, &b| points_fn(a)[d].partial_cmp(&points_fn(b)[d]).unwrap());
-        }
-
-        recur_partition(
-            &|idx| points.get(idx).unwrap_or(&inf),
-            tests.as_mut(),
-            &mut argsorts,
-            0,
-            0,
-            0,
-            n2,
-        );
+        // hack: just pad with infinity to make it a power of 2
+        let mut new_points = vec![[f32::INFINITY; D]; n2];
+        new_points[..points.len()].copy_from_slice(points);
+        recur_sort_points(new_points.as_mut(), tests.as_mut(), 0, 0);
 
         let mut my_points = vec![f32::NAN; n2 * D].into_boxed_slice();
-        for pt in points {
-            let mut test_idx = 0;
-            for i in 0..n2.ilog2() as usize {
-                // println!("current idx: {test_idx}");
-                let add = if pt[i % D] < (tests[test_idx]) { 1 } else { 2 };
-                test_idx <<= 1;
-                test_idx += add;
-            }
-
-            let pt_idx = test_idx - tests.len();
-            for d in 0..D {
-                my_points[d * n2 + pt_idx] = pt[d];
+        for (i, pt) in new_points.iter().enumerate() {
+            for (d, value) in (*pt).into_iter().enumerate() {
+                my_points[d * n2 + i] = value;
             }
         }
 
@@ -230,12 +158,12 @@ mod tests {
     fn single_query() {
         let points = vec![
             [0.1, 0.1],
-            [0.101, 0.2],
+            [0.1, 0.2],
             [0.5, 0.0],
             [0.3, 0.9],
             [1.0, 1.0],
             [0.35, 0.75],
-            [0.6, 0.201],
+            [0.6, 0.2],
             [0.7, 0.8],
         ];
         let kdt = PkdTree::new(&points);
@@ -255,12 +183,12 @@ mod tests {
     fn multi_query() {
         let points = vec![
             [0.1, 0.1],
-            [0.101, 0.2],
+            [0.1, 0.2],
             [0.5, 0.0],
             [0.3, 0.9],
             [1.0, 1.0],
             [0.35, 0.75],
-            [0.6, 0.201],
+            [0.6, 0.2],
             [0.7, 0.8],
         ];
         let kdt = PkdTree::new(&points);
