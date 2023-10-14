@@ -30,5 +30,9 @@ To run the benchmark, do `cargo run --release`.
 - Violin plot of error distribution across different nearest neighbors structures, with mine being
   not the worst.
 - Error distributions (approx neighbor distance / exact neighbor distance) as histograms.
+  ![](figures/abs_error_cdf.png)
+  ![](figures/abs_error_pdf.png)
+  ![](figures/rel_error_cdf.png)
+  ![](figures/rel_error_pdf.png)
 - A nice TikZ or SVG picture showing the data layout and traversal scheme.
-  ![image explaining how this thing works](plot_sketches/sample_explanation_plot.jpg)
+  ![image explaining how this thing works](figures/explanation.jpg)
