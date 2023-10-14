@@ -45,7 +45,7 @@ impl<const D: usize> PkdTree<D> {
             d: usize,
             i: usize,
         ) {
-            // TODO make this algorithm O(n log n) instead of O(n^2 log n)
+            // TODO make this algorithm O(n log n) instead of O(n log^2 n)
             if points.len() > 1 {
                 points.sort_unstable_by(|a, b| a[d].partial_cmp(&b[d]).unwrap());
                 let median = (points[points.len() / 2 - 1][d] + points[points.len() / 2][d]) / 2.0;

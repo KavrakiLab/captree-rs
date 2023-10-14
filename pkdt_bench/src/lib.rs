@@ -128,6 +128,57 @@ pub fn run_benchmark<const D: usize, const L: usize>(
     )
 }
 
+pub fn measure_error<const D: usize, const L: usize>(
+    points: &[[f32; D]],
+    rng: &mut impl Rng,
+    n_trials: usize,
+) where
+    LaneCount<L>: SupportedLaneCount,
+{
+    let sp_clone = Box::from(points);
+
+    let kdt = pkdt::PkdTree::new(&sp_clone);
+    let mut kiddo_kdt = kiddo::KdTree::new();
+    for pt in sp_clone.iter() {
+        kiddo_kdt.add(pt, 0);
+    }
+
+    let mut seq_needles = Vec::new();
+    let mut simd_needles = Vec::new();
+
+    for _ in 0..n_trials / L {
+        let mut simd_pts = [[0.0; L]; D];
+        for l in 0..L {
+            let mut seq_needle = [0.0; D];
+            for d in 0..3 {
+                let value = rng.gen_range::<f32, _>(0.0..1.0);
+                seq_needle[d] = value;
+                simd_pts[d][l] = value;
+            }
+            seq_needles.push(seq_needle);
+        }
+        simd_needles.push(simd_pts);
+    }
+
+    assert_eq!(seq_needles.len(), simd_needles.len() * L);
+
+    for (i, simd_needle) in simd_needles.iter().enumerate() {
+        let simd_idxs = kdt.query(simd_needle);
+        for l in 0..L {
+            let seq_needle = seq_needles[i * L + l];
+            let q1 = kdt.query1(seq_needle);
+            assert_eq!(q1, simd_idxs[l]);
+            let exact_dist = kiddo_kdt
+                .nearest_one(&seq_needle, &kiddo::distance::squared_euclidean)
+                .0
+                .sqrt();
+            let approx_dist = dist(seq_needle, kdt.get_point(q1));
+            let rel_error = approx_dist / exact_dist - 1.0;
+            println!("{seq_needle:?}\t{exact_dist}\t{approx_dist}\t{rel_error}");
+        }
+    }
+}
+
 fn dist<const D: usize>(a: [f32; D], b: [f32; D]) -> f32 {
     a.into_iter()
         .zip(b)
