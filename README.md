@@ -61,3 +61,13 @@ To parse this CSV file and generate plots, run
   and then store them
   - **Dynamic caching**, in which nodes are added as they are considered. _Question_: how to sort
     the nodes?
+
+## Relevant literature
+
+- $k$-d forests: <https://citeseerx.ist.psu.edu/document?repid=rep1&type=pdf&doi=834b4a31f33ccdbf4a92aa004031318df015f825>
+- Progressive $k$-d trees: <https://citeseerx.ist.psu.edu/document?repid=rep1&type=pdf&doi=834b4a31f33ccdbf4a92aa004031318df015f825>
+- Application of non-tentative kd-tree search for image similarity: <https://ieeexplore.ieee.org/stampPDF/getPDF.jsp?tp=&arnumber=1240280&ref=aHR0cHM6Ly9pZWVleHBsb3JlLmllZWUub3JnL2RvY3VtZW50LzEyNDAyODA=&tag=1>
+- Point cloud downsampling: <https://arxiv.org/pdf/2307.02948.pdf>
+- FLANN: <https://lear.inrialpes.fr/~douze/enseignement/2014-2015/presentation_papers/muja_flann.pdf>
+- Discregrid: discrete generator for making SDFs: <https://github.com/InteractiveComputerGraphics/Discregrid/>
+- Building a balanced $k$-d tree in $O(n \log n)$ (note: we tried this but it was slower in practice) <https://jcgt.org/published/0004/01/03/>
