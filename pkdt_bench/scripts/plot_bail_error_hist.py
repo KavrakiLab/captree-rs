@@ -37,59 +37,41 @@ with open(csv_fname) as f:
 
 # PDFs
 
-for bail_height in rel_errs.keys():
-    plt.hist(rel_errs[bail_height], bins=400, density=True, stacked=True)
-    plt.xlabel("Relative distance error")
-    plt.ylabel("Frequency")
-    plt.title(
-        f"PDF of relative error distribution for {csv_fname} at bail height {bail_height}"
-    )
-    plt.show()
+# for bail_height in rel_errs.keys():
+#     plt.hist(rel_errs[bail_height], bins=400, density=True, stacked=True)
+#     plt.xlabel("Relative distance error")
+#     plt.ylabel("Frequency")
+#     plt.title(
+#         f"PDF of relative error distribution for {csv_fname} at bail height {bail_height}"
+#     )
+#     plt.show()
 
-    plt.hist(abs_errs[bail_height], bins=400, density=True, stacked=True)
-    plt.xlabel("Absolute distance error")
-    plt.ylabel("Frequency")
-    plt.title(
-        f"PDF of absolute error distribution for {csv_fname} at bail height {bail_height}"
-    )
-    plt.show()
+#     plt.hist(abs_errs[bail_height], bins=400, density=True, stacked=True)
+#     plt.xlabel("Absolute distance error")
+#     plt.ylabel("Frequency")
+#     plt.title(
+#         f"PDF of absolute error distribution for {csv_fname} at bail height {bail_height}"
+#     )
+#     plt.show()
 
 
 # CDFs
 
 for bail_height in rel_errs.keys():
     plt.hist(
-        rel_errs[bail_height],
-        bins=400,
-        density=True,
-        cumulative=True,
-        label="CDF",
-        histtype="step",
-        alpha=0.8,
-        color="k",
-    )
-
-    plt.xlabel("Relative distance error")
-    plt.ylabel("Frequency")
-    plt.title(
-        f"CDF of relative error distribution for {csv_fname} at bail height {bail_height}"
-    )
-    plt.show()
-
-    plt.hist(
         abs_errs[bail_height],
         bins=400,
         density=True,
         cumulative=True,
-        label="CDF",
+        label=bail_height,
         histtype="step",
         alpha=0.8,
-        color="k",
     )
 
-    plt.xlabel("Absolute distance error")
-    plt.ylabel("Frequency")
-    plt.title(
-        f"CDF of Absolute error distribution for {csv_fname} at bail height {bail_height}"
-    )
-    plt.show()
+plt.xlabel("Absolute distance error")
+plt.ylabel("Frequency")
+plt.title(
+    f"CDF of Absolute error distribution for {csv_fname} at assorted bail heights"
+)
+plt.legend()
+plt.show()

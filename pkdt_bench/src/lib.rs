@@ -18,7 +18,7 @@ pub fn run_benchmark<const D: usize, const L: usize>(
     LaneCount<L>: SupportedLaneCount,
 {
     let sp_clone = Box::from(points);
-
+    println!("{} points", points.len());
     println!("generating PKDT...");
     let tic = Instant::now();
     let kdt = pkdt::PkdTree::new(&sp_clone);
@@ -87,6 +87,20 @@ pub fn run_benchmark<const D: usize, const L: usize>(
         (seq_needles.len() as f64 / seq_time) as u64
     );
 
+    for bail_height in 0..10 {
+        let tic = Instant::now();
+        for needle in &simd_needles {
+            black_box(kdt.query_bail(needle, bail_height));
+        }
+        let toc = Instant::now();
+        let seq_time = (toc.duration_since(tic)).as_secs_f64();
+        println!(
+            "completed bail{bail_height} in {:?}s ({} qps)",
+            seq_time,
+            (seq_needles.len() as f64 / seq_time) as u64
+        );
+    }
+
     let tic = Instant::now();
     for needle in &simd_needles {
         black_box(kdt.query(needle));
@@ -132,10 +146,12 @@ pub fn measure_error<const D: usize, const L: usize>(
             let seq_needle = seq_needles[i * L + l];
             let q1 = simd_idxs[l];
             assert_eq!(q1, simd_idxs[l]);
-            let exact_dist = kiddo_kdt
+            let exact_kiddo_dist = kiddo_kdt
                 .nearest_one(&seq_needle, &kiddo::distance::squared_euclidean)
                 .0
                 .sqrt();
+            let exact_dist = dist(kdt.get_point(kdt.query1_exact(seq_needle)), seq_needle);
+            assert_eq!(exact_dist, exact_kiddo_dist);
             let approx_dist = dist(seq_needle, kdt.get_point(q1));
             let rel_error = approx_dist / exact_dist - 1.0;
             println!("{seq_needle:?}\t{exact_dist}\t{approx_dist}\t{rel_error}");
@@ -161,7 +177,7 @@ pub fn measure_bail_error<const D: usize, const L: usize>(
 
     let (seq_needles, simd_needles) = make_needles(rng, n_trials);
 
-    for bail_height in 1..6 {
+    for bail_height in 0..10 {
         for (i, simd_needle) in simd_needles.iter().enumerate() {
             let simd_idxs = kdt.query_bail(simd_needle, bail_height);
             for l in 0..L {
@@ -217,14 +233,6 @@ fn make_needles<const D: usize, const L: usize>(
     (seq_needles, simd_needles)
 }
 
-fn dist<const D: usize>(a: [f32; D], b: [f32; D]) -> f32 {
-    a.into_iter()
-        .zip(b)
-        .map(|(x1, x2)| (x1 - x2).powi(2))
-        .sum::<f32>()
-        .sqrt()
-}
-
 /// Load a pointcloud as a vector of 3-d float arrays from a HDF5 file located at `pointcloud_path`.
 pub fn load_pointcloud(pointcloud_path: impl AsRef<Path>) -> Result<Vec<[f32; 3]>> {
     let file = File::open(pointcloud_path)?;
@@ -235,4 +243,12 @@ pub fn load_pointcloud(pointcloud_path: impl AsRef<Path>) -> Result<Vec<[f32; 3]
         .into_iter()
         .map(|r| [r[0], r[1], r[2]])
         .collect())
+}
+
+fn dist<const D: usize>(a: [f32; D], b: [f32; D]) -> f32 {
+    a.into_iter()
+        .zip(b)
+        .map(|(x1, x2)| (x1 - x2).powi(2))
+        .sum::<f32>()
+        .sqrt()
 }

@@ -220,6 +220,55 @@ impl<const D: usize> PkdTree<D> {
     }
 
     #[must_use]
+    /// Query for one point in this tree, returning an exact answer.
+    pub fn query1_exact(&self, needle: [f32; D]) -> usize {
+        let n2 = self.tests.len() + 1;
+        let mut guess = self.query1(needle);
+        let mut test_idx = guess + self.tests.len();
+
+        let mut distance = dist(self.get_point(guess), needle);
+        let mut i = 0;
+
+        while test_idx != 0 {
+            let last_test_idx = test_idx;
+            test_idx = (test_idx + 1) / 2 - 1;
+            assert!(2 * test_idx + 1 == last_test_idx || 2 * test_idx + 2 == last_test_idx);
+            let d = i % D;
+
+            if (needle[d] - self.tests[test_idx]).abs() < distance {
+                // needle is close enough to test plane to justify re-searching
+
+                // new_test_idx starts on the opposite side of the test plane
+                let mut new_test_idx = 2 * test_idx + 1 + last_test_idx % 2;
+                assert_ne!(new_test_idx, last_test_idx);
+                for j in (n2.ilog2() as usize - i)..n2.ilog2() as usize {
+                    let add = if needle[j % D] < (self.tests[new_test_idx]) {
+                        1
+                    } else {
+                        2
+                    };
+                    new_test_idx <<= 1;
+                    new_test_idx += add;
+                }
+
+                let new_guess = new_test_idx - self.tests.len();
+                let new_distance = dist(self.get_point(new_guess), needle);
+
+                if new_distance < distance {
+                    distance = new_distance;
+                    guess = new_guess;
+                    test_idx = new_test_idx;
+                    i = 0;
+                    continue;
+                }
+            }
+            i += 1;
+        }
+
+        guess
+    }
+
+    #[must_use]
     #[allow(clippy::missing_panics_doc)]
     pub fn get_point(&self, id: usize) -> [f32; D] {
         let mut point = [0.0; D];
@@ -231,6 +280,14 @@ impl<const D: usize> PkdTree<D> {
 
         point
     }
+}
+
+fn dist<const D: usize>(a: [f32; D], b: [f32; D]) -> f32 {
+    a.into_iter()
+        .zip(b)
+        .map(|(x1, x2)| (x1 - x2).powi(2))
+        .sum::<f32>()
+        .sqrt()
 }
 
 #[cfg(test)]
