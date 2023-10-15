@@ -115,8 +115,14 @@ impl<const D: usize> PkdTree<D> {
     }
 
     #[must_use]
+    #[allow(clippy::cast_possible_truncation)]
+    #[allow(clippy::similar_names)]
     /// Query in parallel, bailing at height `bail_height` and then linearly searching all
     /// candidates for the nearest neighbors below `bail_height`.
+    ///
+    /// # Panics
+    ///
+    /// This function will panic f `bail_height` is greater than the depth of the search tree.
     pub fn query_bail<const L: usize>(&self, needles: &[[f32; L]; D], bail_height: u8) -> [usize; L]
     where
         LaneCount<L>: SupportedLaneCount,
