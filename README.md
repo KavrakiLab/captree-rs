@@ -48,8 +48,8 @@ To parse this CSV file and generate plots, run
 
 ## Ideas for error management
 
-- **Early bail**. Avoid doing the last few tests, then exhaustively check all children.
-  Very easy to implement and probably performant, but not guaranteed.
+- ~~**Early bail**. Avoid doing the last few tests, then exhaustively check all children.
+  Very easy to implement and probably performant, but not guaranteed.~~
 - **Conservative backtracking**. Backtrack in parallel, quitting only when we have a proof for all
   lanes.
 - **Bounded backtracking**. Backtrack in parallel but bail after a fixed number of backtracks.

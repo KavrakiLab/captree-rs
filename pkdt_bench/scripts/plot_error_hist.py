@@ -6,6 +6,7 @@ USAGE:
 python ./plot_error_hist.py path/to/errors.csv
 ```
 
+Columns must be separated by tabs (`\\t`).
 errors.csv must have anything in column 0, true distance in column 1, estimated distance in column 
 2, and relative error in column 3.
 """
