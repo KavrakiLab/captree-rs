@@ -1,0 +1,3 @@
+[submodule "nigh_bench/nigh"]
+	path = nigh_bench/nigh
+	url = git@github.com:UNC-Robotics/nigh.git

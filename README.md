@@ -4,6 +4,8 @@ It's one thing to be wrong and something else entirely to be wrong _fast_.
 
 ## Usage
 
+Make sure to run `git submodule update --init --recursive`.
+
 To run the benchmark, do `cargo run --release --bin bench path/to/my_pointcloud.hd5`.
 To generate a CSV file with error distribution information, run
 `cargo run --release --bin error path/to/my_pointcloud.hd5 > errors.csv`.
