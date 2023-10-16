@@ -1,127 +1,14 @@
 #![feature(portable_simd)]
 
 use std::{
-    hint::black_box,
+    env,
     path::Path,
     simd::{LaneCount, SupportedLaneCount},
-    time::Instant,
 };
 
 use hdf5::{File, Result};
-use rand::Rng;
-
-pub fn run_benchmark<const D: usize, const L: usize>(
-    points: &[[f32; D]],
-    rng: &mut impl Rng,
-    n_trials: usize,
-) where
-    LaneCount<L>: SupportedLaneCount,
-{
-    let sp_clone = Box::from(points);
-    println!("{} points", points.len());
-    println!("generating PKDT...");
-    let tic = Instant::now();
-    let kdt = pkdt::PkdTree::new(&sp_clone);
-    println!("generated tree in {:?}", Instant::now().duration_since(tic));
-
-    println!("generating competitor's KDT");
-    let tic = Instant::now();
-    let mut kiddo_kdt = kiddo::KdTree::new();
-    for pt in sp_clone.iter() {
-        kiddo_kdt.add(pt, 0);
-    }
-    println!(
-        "generated kiddo tree in {:?}",
-        Instant::now().duration_since(tic)
-    );
-
-    let (seq_needles, simd_needles) = make_needles(rng, n_trials);
-
-    let mut sum_approx_dist = 0.0;
-    let mut sum_exact_dist = 0.0;
-    println!("testing for correctness...");
-    for (i, simd_needle) in simd_needles.iter().enumerate() {
-        let simd_idxs = kdt.query(simd_needle);
-        for l in 0..L {
-            let seq_needle = seq_needles[i * L + l];
-            let q1 = kdt.query1(seq_needle);
-            assert_eq!(q1, simd_idxs[l]);
-            sum_exact_dist += kiddo_kdt
-                .nearest_one(&seq_needle, &kiddo::distance::squared_euclidean)
-                .0
-                .sqrt();
-            sum_approx_dist += dist(seq_needle, kdt.get_point(q1));
-        }
-    }
-    println!("simd and sequential implementations are consistent with each other.");
-    println!(
-        "mean exact distance: {}; mean approx dist: {}",
-        sum_exact_dist / seq_needles.len() as f32,
-        sum_approx_dist / seq_needles.len() as f32
-    );
-
-    println!("testing for performance...");
-    println!("testing sequential...");
-
-    let tic = Instant::now();
-    for needle in &seq_needles {
-        black_box(kiddo_kdt.nearest_one(needle, &kiddo::distance::squared_euclidean));
-    }
-    let toc = Instant::now();
-    let kiddo_time = (toc.duration_since(tic)).as_secs_f64();
-    println!(
-        "completed kiddo in {:?}s ({} qps)",
-        kiddo_time,
-        (simd_needles.len() as f64 / kiddo_time) as u64
-    );
-
-    let tic = Instant::now();
-    for &needle in &seq_needles {
-        black_box(kdt.query1(needle));
-    }
-    let toc = Instant::now();
-    let seq_time = (toc.duration_since(tic)).as_secs_f64();
-    println!(
-        "completed sequential in {:?}s ({} qps)",
-        seq_time,
-        (seq_needles.len() as f64 / seq_time) as u64
-    );
-
-    for bail_height in 0..10 {
-        let tic = Instant::now();
-        for needle in &simd_needles {
-            black_box(kdt.query_bail(needle, bail_height));
-        }
-        let toc = Instant::now();
-        let seq_time = (toc.duration_since(tic)).as_secs_f64();
-        println!(
-            "completed bail{bail_height} in {:?}s ({} qps)",
-            seq_time,
-            (seq_needles.len() as f64 / seq_time) as u64
-        );
-    }
-
-    let tic = Instant::now();
-    for needle in &simd_needles {
-        black_box(kdt.query(needle));
-    }
-    let toc = Instant::now();
-    let simd_time = (toc.duration_since(tic)).as_secs_f64();
-    println!(
-        "completed simd in {:?}s, ({} qps)",
-        simd_time,
-        (seq_needles.len() as f64 / simd_time) as u64
-    );
-
-    println!(
-        "speedup: {}% vs single-query",
-        (100.0 * (seq_time / simd_time - 1.0)) as u64
-    );
-    println!(
-        "speedup: {}% vs kiddo",
-        (100.0 * (kiddo_time / simd_time - 1.0)) as u64
-    )
-}
+use rand::{Rng, SeedableRng};
+use rand_chacha::ChaCha20Rng;
 
 pub fn measure_error<const D: usize, const L: usize>(
     points: &[[f32; D]],
@@ -196,6 +83,28 @@ pub fn measure_bail_error<const D: usize, const L: usize>(
     }
 }
 
+pub fn get_points(n_points_if_no_cloud: usize) -> Vec<[f32; 3]> {
+    let args: Vec<String> = env::args().collect();
+    let mut rng = ChaCha20Rng::seed_from_u64(2707);
+
+    if args.len() > 1 {
+        println!("Loading pointcloud from {}", &args[1]);
+        load_pointcloud(Path::new(&args[1])).unwrap()
+    } else {
+        println!("No pointcloud file! Using N={n_points_if_no_cloud}");
+        println!("generating random points...");
+        (0..n_points_if_no_cloud)
+            .map(|_| {
+                [
+                    rng.gen_range::<f32, _>(0.0..1.0),
+                    rng.gen_range::<f32, _>(0.0..1.0),
+                    rng.gen_range::<f32, _>(0.0..1.0),
+                ]
+            })
+            .collect()
+    }
+}
+
 /// Generate some randomized numbers for us to benchmark against.
 ///
 /// # Generic parameters
@@ -207,7 +116,7 @@ pub fn measure_bail_error<const D: usize, const L: usize>(
 ///
 /// Returns a pair `(seq_needles, simd_needles)`, where `seq_needles` is correctly shaped for
 /// sequential querying and `simd_needles` is correctly shaped for SIMD querying.
-fn make_needles<const D: usize, const L: usize>(
+pub fn make_needles<const D: usize, const L: usize>(
     rng: &mut impl Rng,
     n_trials: usize,
 ) -> (Vec<[f32; D]>, Vec<[[f32; L]; D]>) {
@@ -245,7 +154,7 @@ pub fn load_pointcloud(pointcloud_path: impl AsRef<Path>) -> Result<Vec<[f32; 3]
         .collect())
 }
 
-fn dist<const D: usize>(a: [f32; D], b: [f32; D]) -> f32 {
+pub fn dist<const D: usize>(a: [f32; D], b: [f32; D]) -> f32 {
     a.into_iter()
         .zip(b)
         .map(|(x1, x2)| (x1 - x2).powi(2))

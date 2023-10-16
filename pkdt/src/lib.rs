@@ -220,52 +220,89 @@ impl<const D: usize> PkdTree<D> {
     }
 
     #[must_use]
+    #[allow(clippy::cast_possible_wrap, clippy::cast_sign_loss)]
     /// Query for one point in this tree, returning an exact answer.
     pub fn query1_exact(&self, needle: [f32; D]) -> usize {
-        let n2 = self.tests.len() + 1;
-        let mut guess = self.query1(needle);
-        let mut test_idx = guess + self.tests.len();
+        let mut id = usize::MAX;
+        let mut best_distsq = f32::INFINITY;
+        self.exact_help(
+            0,
+            0,
+            &[[-f32::INFINITY, f32::INFINITY]; D],
+            needle,
+            &mut id,
+            &mut best_distsq,
+        );
+        id
+    }
 
-        let mut distance = dist(self.get_point(guess), needle);
-        let mut i = 0;
-
-        while test_idx != 0 {
-            let last_test_idx = test_idx;
-            test_idx = (test_idx + 1) / 2 - 1;
-            assert!(2 * test_idx + 1 == last_test_idx || 2 * test_idx + 2 == last_test_idx);
-            let d = i % D;
-
-            if (needle[d] - self.tests[test_idx]).abs() < distance {
-                // needle is close enough to test plane to justify re-searching
-
-                // new_test_idx starts on the opposite side of the test plane
-                let mut new_test_idx = 2 * test_idx + 1 + last_test_idx % 2;
-                assert_ne!(new_test_idx, last_test_idx);
-                for j in (n2.ilog2() as usize - i)..n2.ilog2() as usize {
-                    let add = if needle[j % D] < (self.tests[new_test_idx]) {
-                        1
-                    } else {
-                        2
-                    };
-                    new_test_idx <<= 1;
-                    new_test_idx += add;
-                }
-
-                let new_guess = new_test_idx - self.tests.len();
-                let new_distance = dist(self.get_point(new_guess), needle);
-
-                if new_distance < distance {
-                    distance = new_distance;
-                    guess = new_guess;
-                    test_idx = new_test_idx;
-                    i = 0;
-                    continue;
-                }
-            }
-            i += 1;
+    fn exact_help(
+        &self,
+        test_idx: usize,
+        d: u8,
+        bounding_box: &[[f32; 2]; D],
+        point: [f32; D],
+        best_id: &mut usize,
+        best_distsq: &mut f32,
+    ) {
+        if bb_distsq(point, bounding_box) > *best_distsq {
+            return;
         }
 
-        guess
+        if self.tests.len() <= test_idx {
+            let id = test_idx - self.tests.len();
+            let new_distsq = distsq(point, self.get_point(id));
+            if new_distsq < *best_distsq {
+                *best_id = id;
+                *best_distsq = new_distsq;
+            }
+
+            return;
+        }
+
+        let test = self.tests[test_idx];
+
+        let mut bb_below = *bounding_box;
+        bb_below[d as usize][1] = test;
+        let mut bb_above = *bounding_box;
+        bb_above[d as usize][0] = test;
+
+        let next_d = (d + 1) % D as u8;
+        if point[d as usize] < test {
+            self.exact_help(
+                2 * test_idx + 1,
+                next_d,
+                &bb_below,
+                point,
+                best_id,
+                best_distsq,
+            );
+            self.exact_help(
+                2 * test_idx + 2,
+                next_d,
+                &bb_above,
+                point,
+                best_id,
+                best_distsq,
+            );
+        } else {
+            self.exact_help(
+                2 * test_idx + 2,
+                next_d,
+                &bb_above,
+                point,
+                best_id,
+                best_distsq,
+            );
+            self.exact_help(
+                2 * test_idx + 1,
+                next_d,
+                &bb_below,
+                point,
+                best_id,
+                best_distsq,
+            );
+        }
     }
 
     #[must_use]
@@ -282,12 +319,28 @@ impl<const D: usize> PkdTree<D> {
     }
 }
 
-fn dist<const D: usize>(a: [f32; D], b: [f32; D]) -> f32 {
+fn bb_distsq<const D: usize>(point: [f32; D], bb: &[[f32; 2]; D]) -> f32 {
+    point
+        .into_iter()
+        .zip(bb.iter())
+        .map(|(x, [lower, upper])| {
+            (if x < *lower {
+                *lower - x
+            } else if *upper < x {
+                x - *upper
+            } else {
+                0.0
+            })
+            .powi(2)
+        })
+        .sum()
+}
+
+fn distsq<const D: usize>(a: [f32; D], b: [f32; D]) -> f32 {
     a.into_iter()
         .zip(b)
         .map(|(x1, x2)| (x1 - x2).powi(2))
         .sum::<f32>()
-        .sqrt()
 }
 
 #[cfg(test)]
