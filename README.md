@@ -73,3 +73,4 @@ To parse this CSV file and generate plots, run
 - FLANN: <https://lear.inrialpes.fr/~douze/enseignement/2014-2015/presentation_papers/muja_flann.pdf>
 - Discregrid: discrete generator for making SDFs: <https://github.com/InteractiveComputerGraphics/Discregrid/>
 - Building a balanced $k$-d tree in $O(n \log n)$ (note: we tried this but it was slower in practice) <https://jcgt.org/published/0004/01/03/>
+- comparison of ANN on a bunch of different things: <https://ieeexplore.ieee.org/stamp/stamp.jsp?arnumber=8681160&casa_token=Sa3sfKdbiVUAAAAA:m51NJpk7aNiVvtLl9MFiapqL6_zvkYhM1aJ8UU8F1pJV8E3BVvDkuxVi_-IS7M9wHpzz_K5_&tag=1>
