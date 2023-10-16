@@ -20,10 +20,14 @@ namespace nigh = unc::robotics::nigh;
 using State = Eigen::Vector3d;
 using Metric = nigh::metric::LP<2>;
 
-int main(int argc, char **argv) {
-    if (argc < 2) {
+int main(int argc, char **argv)
+{
+    if (argc < 2)
+    {
         std::cout << "No pointcloud file given. Using randomly generated points." << std::endl;
-    } else {
+    }
+    else
+    {
         auto fname = std::string(argv[1]);
         std::cout << "Opening pointcloud file " << fname << "..." << std::endl;
 

@@ -6,8 +6,10 @@
 #include <string>
 #include <vector>
 
-int main(int argc, char **argv) {
-    if (argc < 2) {
+int main(int argc, char **argv)
+{
+    if (argc < 2)
+    {
         std::cerr << "Provide a pointcloud filename!\n";
         return -1;
     }
@@ -19,13 +21,15 @@ int main(int argc, char **argv) {
     auto raw_pointcloud = dataset.read<std::vector<std::array<float, 3>>>();
     std::cout << raw_pointcloud.size() << " points loaded\n";
     pcl::PointCloud<pcl::PointXYZ>::Ptr pointcloud(new pcl::PointCloud<pcl::PointXYZ>());
-    for (const auto &[x, y, z] : raw_pointcloud) {
+    for (const auto &[x, y, z] : raw_pointcloud)
+    {
         pointcloud->push_back(pcl::PointXYZ(x, y, z));
     }
 
     pcl::visualization::CloudViewer viewer("Pointcloud Viewer");
     viewer.showCloud(pointcloud);
-    while (!viewer.wasStopped()) {
+    while (!viewer.wasStopped())
+    {
     }
 
     return 0;
