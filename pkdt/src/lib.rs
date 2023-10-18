@@ -36,26 +36,34 @@ impl<const D: usize> PkdTree<D> {
     /// For performance, this function changes the ordering of `points`, but does not affect the
     /// set of points inside it.
     ///
+    /// # Panics
+    ///
+    /// This function will panic if `D` is greater than or equal to 255.
+    ///
     /// TODO: do all our sorting on the allocation that we return?
     pub fn new(points: &[[f32; D]]) -> Self {
         /// Recursive helper function to sort the points for the KD tree and generate the tests.
         fn recur_sort_points<const D: usize>(
             points: &mut [[f32; D]],
             tests: &mut [f32],
-            d: usize,
+            d: u8,
             i: usize,
         ) {
             // TODO make this algorithm O(n log n) instead of O(n log^2 n)
             if points.len() > 1 {
-                points.sort_unstable_by(|a, b| a[d].partial_cmp(&b[d]).unwrap());
-                let median = (points[points.len() / 2 - 1][d] + points[points.len() / 2][d]) / 2.0;
+                points.sort_unstable_by(|a, b| a[d as usize].partial_cmp(&b[d as usize]).unwrap());
+                let median = (points[points.len() / 2 - 1][d as usize]
+                    + points[points.len() / 2][d as usize])
+                    / 2.0;
                 tests[i] = median;
-                let next_dim = (d + 1) % D;
+                let next_dim = (d + 1) % D as u8;
                 let (lhs, rhs) = points.split_at_mut(points.len() / 2);
                 recur_sort_points(lhs, tests, next_dim, 2 * i + 1);
                 recur_sort_points(rhs, tests, next_dim, 2 * i + 2);
             }
         }
+
+        assert!(D < u8::MAX as usize);
 
         let n2 = points.len().next_power_of_two();
 

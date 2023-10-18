@@ -63,6 +63,8 @@ To parse this CSV file and generate plots, run
   and then store them
   - **Dynamic caching**, in which nodes are added as they are considered. _Question_: how to sort
     the nodes?
+- **Random forests**. Construct a forest of PKDTs, each with a different set of dimensions to branch
+  on, then take the closest point from each one.
 
 ## Relevant literature
 
