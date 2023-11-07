@@ -7,6 +7,10 @@ use std::{
     simd::{LaneCount, Mask, Simd, SimdConstPtr, SimdPartialOrd, SupportedLaneCount},
 };
 
+mod forest;
+
+pub use forest::PkdForest;
+
 #[derive(Clone, Debug, PartialEq)]
 /// A power-of-two KD-tree.
 ///
