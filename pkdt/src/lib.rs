@@ -36,6 +36,7 @@ pub struct PkdTree<const D: usize> {
 
 impl<const D: usize> PkdTree<D> {
     #[must_use]
+    #[allow(clippy::cast_possible_truncation)]
     /// Construct a new `PkdTree` containing all the points in `points`.
     /// For performance, this function changes the ordering of `points`, but does not affect the
     /// set of points inside it.
@@ -165,6 +166,7 @@ impl<const D: usize> PkdTree<D> {
         id
     }
 
+    #[allow(clippy::cast_possible_truncation)]
     fn exact_help(
         &self,
         test_idx: usize,

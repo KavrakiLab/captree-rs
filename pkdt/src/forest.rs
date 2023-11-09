@@ -18,6 +18,7 @@ struct RandomizedTree<const D: usize> {
 }
 
 #[derive(Clone, Debug)]
+#[allow(clippy::module_name_repetitions)]
 pub struct PkdForest<const D: usize, const T: usize> {
     test_seqs: [RandomizedTree<D>; T],
 }
@@ -38,6 +39,9 @@ impl<const D: usize, const T: usize> PkdForest<D, T> {
     }
 
     #[must_use]
+    /// # Panics
+    ///
+    /// This function will panic if `T` is 0.
     pub fn query1(&self, needle: [f32; D]) -> ([f32; D], f32) {
         self.test_seqs
             .iter()
@@ -127,7 +131,7 @@ impl<const D: usize> RandomizedTree<D> {
         assert_eq!(self.tests.len(), self.test_dims.len());
 
         let mut test_idx = 0;
-        for i in 0..n2.ilog2() as usize {
+        for _ in 0..n2.ilog2() as usize {
             // println!("current idx: {test_idx}");
             let add = if needle[self.test_dims[test_idx] as usize] < (self.tests[test_idx]) {
                 1
@@ -158,7 +162,7 @@ impl<const D: usize> RandomizedTree<D> {
         for (i, elem) in needle_offsets.as_mut_array().iter_mut().enumerate() {
             *elem = i * L;
         }
-        let mut needle_start_ptrs = Simd::splat((needles as *const [[f32; D]; L]).cast::<f32>())
+        let needle_start_ptrs = Simd::splat((needles as *const [[f32; D]; L]).cast::<f32>())
             .wrapping_add(needle_offsets);
 
         // Advance the tests forward
@@ -169,9 +173,8 @@ impl<const D: usize> RandomizedTree<D> {
                 .wrapping_add(test_idxs);
             let relevant_tests: Simd<f32, L> = unsafe { Simd::gather_ptr(test_ptrs) };
             let dim_nrs = unsafe { Simd::gather_ptr(dim_ptrs) };
-            let needle_ptrs = unsafe {
-                needle_start_ptrs.wrapping_add(dim_nrs.as_array().map(|x| x as usize).into())
-            };
+            let needle_ptrs =
+                needle_start_ptrs.wrapping_add(dim_nrs.as_array().map(|x| x as usize).into());
             let needle_values = unsafe { Simd::gather_ptr(needle_ptrs) };
             let cmp_results: Mask<isize, L> = needle_values.simd_lt(relevant_tests).into();
 
@@ -184,10 +187,11 @@ impl<const D: usize> RandomizedTree<D> {
     }
 }
 
+#[cfg(test)]
 mod tests {
     use rand::thread_rng;
 
-    use super::PkdForest;
+    use super::*;
 
     #[test]
     fn build_a_forest() {

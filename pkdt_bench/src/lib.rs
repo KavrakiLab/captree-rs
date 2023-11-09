@@ -1,14 +1,10 @@
 #![feature(portable_simd)]
 
-use std::{
-    env,
-    path::Path,
-};
+use std::{env, path::Path};
 
 use hdf5::{File, Result};
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
-
 
 pub fn get_points(n_points_if_no_cloud: usize) -> Vec<[f32; 3]> {
     let args: Vec<String> = env::args().collect();

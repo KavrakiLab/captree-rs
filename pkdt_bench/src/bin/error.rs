@@ -1,8 +1,12 @@
 #![feature(portable_simd)]
 
-use std::{env, path::Path, simd::{LaneCount, SupportedLaneCount}};
+use std::{
+    env,
+    path::Path,
+    simd::{LaneCount, SupportedLaneCount},
+};
 
-use pkdt_bench::{load_pointcloud, make_needles, dist};
+use pkdt_bench::{dist, load_pointcloud, make_needles};
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 
@@ -32,7 +36,6 @@ fn main() {
 
     measure_error::<D, L>(&starting_points, &mut rng, 1 << 20);
 }
-
 
 pub fn measure_error<const D: usize, const L: usize>(
     points: &[[f32; D]],
