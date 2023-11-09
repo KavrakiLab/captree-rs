@@ -119,7 +119,6 @@ fn bench_forest<const T: usize>(points: &[[f32; 3]], needles: &[[f32; 3]], rng: 
     println!(
         "completed forest (T={T}) in {:?} ({:?}/pt, {:?}/q)",
         toc - tic,
-
         (toc - tic) / needles.len() as u32,
         (toc - tic) / (needles.len() / L) as u32,
     );
