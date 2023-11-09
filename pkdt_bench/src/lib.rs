@@ -43,15 +43,22 @@ pub fn make_needles<const D: usize, const L: usize>(
     rng: &mut impl Rng,
     n_trials: usize,
 ) -> (Vec<[f32; D]>, Vec<[[f32; L]; D]>) {
+    const LOCALITY: f32 = 0.001;
     let mut seq_needles = Vec::new();
     let mut simd_needles = Vec::new();
 
     for _ in 0..n_trials / L {
         let mut simd_pts = [[0.0; L]; D];
-        for l in 0..L {
+        let mut seq_needle0 = [0.0; D];
+        for d in 0..D {
+            simd_pts[d][0] = rng.gen_range(0.0..1.0);
+            seq_needle0[d] = simd_pts[d][0];
+        }
+        seq_needles.push(seq_needle0);
+        for l in 1..L {
             let mut seq_needle = [0.0; D];
-            for d in 0..3 {
-                let value = rng.gen_range::<f32, _>(0.0..1.0);
+            for d in 0..D {
+                let value = rng.gen_range::<f32, _>(simd_pts[d][0] - LOCALITY..simd_pts[d][0] + LOCALITY);
                 seq_needle[d] = value;
                 simd_pts[d][l] = value;
             }

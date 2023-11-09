@@ -50,17 +50,17 @@ fn main() {
         kiddo_time / seq_needles.len() as u32
     );
 
-    let tic = Instant::now();
-    for needle in &seq_needles {
-        black_box(kdt.query1_exact(*needle));
-    }
-    let toc = Instant::now();
-    let exact_time = (toc.duration_since(tic)).as_secs_f64();
-    println!(
-        "completed exact in {:?}s ({} qps)",
-        exact_time,
-        (simd_needles.len() as f64 / exact_time) as u64
-    );
+    // let tic = Instant::now();
+    // for needle in &seq_needles {
+    //     black_box(kdt.query1_exact(*needle));
+    // }
+    // let toc = Instant::now();
+    // let exact_time = (toc.duration_since(tic)).as_secs_f64();
+    // println!(
+    //     "completed exact in {:?}s ({} qps)",
+    //     exact_time,
+    //     (simd_needles.len() as f64 / exact_time) as u64
+    // );
 
     let tic = Instant::now();
     for &needle in &seq_needles {

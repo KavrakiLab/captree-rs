@@ -56,15 +56,16 @@ impl<const D: usize> PkdTree<D> {
         ) {
             // TODO make this algorithm O(n log n) instead of O(n log^2 n)
             if points.len() > 1 {
+                let halflen = points.len() / 2;
                 points.sort_unstable_by(|a, b| a[d as usize].partial_cmp(&b[d as usize]).unwrap());
-                let median = (points[points.len() / 2 - 1][d as usize]
-                    + points[points.len() / 2][d as usize])
+                let median = (points[halflen - 1][d as usize]
+                    + points[halflen][d as usize])
                     / 2.0;
                 tests[i] = median;
                 let next_dim = (d + 1) % D as u8;
-                let (lhs, rhs) = points.split_at_mut(points.len() / 2);
-                recur_sort_points(lhs, tests, next_dim, 2 * i + 1);
-                recur_sort_points(rhs, tests, next_dim, 2 * i + 2);
+                let (lhs, rhs) = points.split_at_mut(halflen);
+                recur_sort_points(lhs, tests, next_dim, i + 1);
+                recur_sort_points(rhs, tests, next_dim, i + halflen);
             }
         }
 
@@ -104,6 +105,7 @@ impl<const D: usize> PkdTree<D> {
     {
         let mut test_idxs: Simd<usize, L> = Simd::splat(0);
         let n2 = self.tests.len() + 1;
+        let mut increment = n2 / 2;
         debug_assert!(n2.is_power_of_two());
 
         // in release mode, tell the compiler about this invariant
@@ -120,8 +122,8 @@ impl<const D: usize> PkdTree<D> {
             let cmp_results: Mask<isize, L> = needle_values.simd_lt(relevant_tests).into();
 
             // TODO is there a faster way than using a conditional select?
-            test_idxs <<= Simd::splat(1);
-            test_idxs += cmp_results.select(Simd::splat(1), Simd::splat(2));
+            test_idxs += cmp_results.select(Simd::splat(1), Simd::splat(increment));
+            increment >>= 1;
         }
 
         (test_idxs - Simd::splat(self.tests.len())).into()
@@ -135,15 +137,15 @@ impl<const D: usize> PkdTree<D> {
         assert!(n2.is_power_of_two());
 
         let mut test_idx = 0;
+        let mut increment = n2 / 2;
         for i in 0..n2.ilog2() as usize {
             // println!("current idx: {test_idx}");
-            let add = if needle[i % D] < (self.tests[test_idx]) {
-                1
+            if needle[i % D] < self.tests[test_idx] {
+                test_idx += 1;
             } else {
-                2
+                test_idx += increment;
             };
-            test_idx <<= 1;
-            test_idx += add;
+            increment >>= 1;
         }
 
         test_idx - self.tests.len()
@@ -201,7 +203,7 @@ impl<const D: usize> PkdTree<D> {
         let next_d = (d + 1) % D as u8;
         if point[d as usize] < test {
             self.exact_help(
-                2 * test_idx + 1,
+                test_idx + 1,
                 next_d,
                 &bb_below,
                 point,
