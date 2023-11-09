@@ -46,43 +46,6 @@ pub fn measure_error<const D: usize, const L: usize>(
     }
 }
 
-/// Run a test of the error of the bail approach for SIMD KDT querying.
-pub fn measure_bail_error<const D: usize, const L: usize>(
-    points: &[[f32; D]],
-    rng: &mut impl Rng,
-    n_trials: usize,
-) where
-    LaneCount<L>: SupportedLaneCount,
-{
-    let sp_clone = Box::from(points);
-
-    let kdt = pkdt::PkdTree::new(&sp_clone);
-    let mut kiddo_kdt = kiddo::KdTree::new();
-    for pt in sp_clone.iter() {
-        kiddo_kdt.add(pt, 0);
-    }
-
-    let (seq_needles, simd_needles) = make_needles(rng, n_trials);
-
-    for bail_height in 0..10 {
-        for (i, simd_needle) in simd_needles.iter().enumerate() {
-            let simd_idxs = kdt.query_bail(simd_needle, bail_height);
-            for l in 0..L {
-                let seq_needle = seq_needles[i * L + l];
-                let q1 = simd_idxs[l];
-                assert_eq!(q1, simd_idxs[l]);
-                let exact_dist = kiddo_kdt
-                    .nearest_one(&seq_needle, &kiddo::distance::squared_euclidean)
-                    .0
-                    .sqrt();
-                let approx_dist = dist(seq_needle, kdt.get_point(q1));
-                let rel_error = approx_dist / exact_dist - 1.0;
-                println!("{bail_height}\t{seq_needle:?}\t{exact_dist}\t{approx_dist}\t{rel_error}");
-            }
-        }
-    }
-}
-
 pub fn get_points(n_points_if_no_cloud: usize) -> Vec<[f32; 3]> {
     let args: Vec<String> = env::args().collect();
     let mut rng = ChaCha20Rng::seed_from_u64(2707);

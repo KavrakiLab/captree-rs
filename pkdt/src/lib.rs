@@ -127,89 +127,6 @@ impl<const D: usize> PkdTree<D> {
     }
 
     #[must_use]
-    #[allow(clippy::cast_possible_truncation)]
-    #[allow(clippy::similar_names)]
-    /// Query in parallel, bailing at height `bail_height` and then linearly searching all
-    /// candidates for the nearest neighbors below `bail_height`.
-    ///
-    /// # Panics
-    ///
-    /// This function will panic f `bail_height` is greater than the depth of the search tree.
-    pub fn query_bail<const L: usize>(&self, needles: &[[f32; L]; D], bail_height: u8) -> [usize; L]
-    where
-        LaneCount<L>: SupportedLaneCount,
-    {
-        let n2 = self.tests.len() + 1;
-        debug_assert!(n2.is_power_of_two());
-
-        // in release mode, tell the compiler about this invariant
-        if !n2.is_power_of_two() {
-            unsafe { unreachable_unchecked() };
-        }
-
-        assert!(bail_height <= n2.ilog2() as u8);
-        let mut test_idxs: Simd<usize, L> = Simd::splat(0);
-
-        // Advance the tests forward
-        for i in 0..n2.ilog2() as u8 - bail_height {
-            let test_ptrs = Simd::splat((self.tests.as_ref() as *const [f32]).cast::<f32>())
-                .wrapping_add(test_idxs);
-            let relevant_tests: Simd<f32, L> = unsafe { Simd::gather_ptr(test_ptrs) };
-            let needle_values = Simd::from_array(needles[i as usize % D]);
-            let cmp_results: Mask<isize, L> = needle_values.simd_lt(relevant_tests).into();
-
-            // TODO is there a faster way than using a conditional select?
-            test_idxs <<= Simd::splat(1);
-            test_idxs += cmp_results.select(Simd::splat(1), Simd::splat(2));
-        }
-
-        // linear search for the nearest one
-        let mut point_idxs = (test_idxs << Simd::splat(bail_height as usize))
-            + Simd::splat((1 << bail_height) - 1)
-            - Simd::splat(self.tests.len());
-
-        let mut best_dists = Simd::splat(0.0);
-        let mut best_idxs = point_idxs;
-        for d in 0..D {
-            unsafe {
-                let point_base = (self.points.as_ref() as *const [f32])
-                    .cast::<f32>()
-                    .add(d * n2);
-                let point_ptrs = Simd::splat(point_base).wrapping_add(point_idxs);
-
-                let point_values = Simd::gather_ptr(point_ptrs);
-                let diffs = Simd::from_array(needles[d % D]) - point_values;
-                best_dists += diffs * diffs;
-            }
-        }
-
-        for _ in 1..1 << bail_height {
-            point_idxs += Simd::splat(1);
-            let mut dists = Simd::splat(0.0);
-            for d in 0..D {
-                unsafe {
-                    let point_base = (self.points.as_ref() as *const [f32])
-                        .cast::<f32>()
-                        .add(d * n2);
-                    let point_ptrs = Simd::splat(point_base).wrapping_add(point_idxs);
-
-                    let point_values = Simd::gather_ptr(point_ptrs);
-                    let diffs = Simd::from_array(needles[d % D]) - point_values;
-                    dists += diffs * diffs;
-                }
-                // println!("{best_dists:?} vs {dists:?}");
-            }
-
-            let was_dists_lower = dists.simd_lt(best_dists);
-            best_dists = was_dists_lower.select(dists, best_dists);
-            let wdl_isize: Mask<isize, L> = was_dists_lower.into();
-            best_idxs = wdl_isize.select(point_idxs, best_idxs);
-        }
-
-        best_idxs.into()
-    }
-
-    #[must_use]
     #[allow(clippy::missing_panics_doc)]
     /// Get the access index of the point closest to `needle`
     pub fn query1(&self, needle: [f32; D]) -> usize {
@@ -400,24 +317,6 @@ mod tests {
 
         let needles = [[-1.0, 2.0], [-1.0, 2.0]];
         assert_eq!(kdt.query(&needles), [0, points.len() - 1]);
-    }
-
-    #[test]
-    fn bailing() {
-        let points = vec![
-            [0.1, 0.1],
-            [0.1, 0.2],
-            [0.5, 0.0],
-            [0.3, 0.9],
-            [1.0, 1.0],
-            [0.35, 0.75],
-            [0.6, 0.2],
-            [0.7, 0.8],
-        ];
-        let kdt = PkdTree::new(&points);
-
-        let needles = [[-1.0, 2.0], [-1.0, 2.0]];
-        assert_eq!(kdt.query_bail(&needles, 1), [0, points.len() - 1]);
     }
 
     #[test]
