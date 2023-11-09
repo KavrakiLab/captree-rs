@@ -7,7 +7,7 @@ use pkdt_bench::{get_points, make_needles};
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 
-const N: usize = 1 << 16;
+const N: usize = 1 << 12;
 const L: usize = 16;
 
 fn main() {

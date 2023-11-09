@@ -10,6 +10,7 @@ use std::{
 mod ball;
 mod forest;
 
+pub use ball::BallTree;
 pub use forest::PkdForest;
 
 #[derive(Clone, Debug, PartialEq)]
