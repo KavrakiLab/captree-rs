@@ -7,6 +7,7 @@ use std::{
     simd::{LaneCount, Mask, Simd, SimdConstPtr, SimdPartialOrd, SupportedLaneCount},
 };
 
+mod ball;
 mod forest;
 
 pub use forest::PkdForest;
