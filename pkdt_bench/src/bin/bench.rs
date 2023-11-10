@@ -1,6 +1,6 @@
-#![feature(split_array)]
+#![feature(portable_simd)]
 
-use std::{hint::black_box, time::Instant};
+use std::{hint::black_box, simd::Simd, time::Instant};
 
 use pkdt::PkdForest;
 use pkdt_bench::{get_points, make_needles};
@@ -64,7 +64,7 @@ fn main() {
 
     let tic = Instant::now();
     for &needle in &seq_needles {
-        black_box(kdt.query1(needle));
+        black_box(kdt.might_collide(needle, 0.0001));
     }
     let toc = Instant::now();
     let seq_time = toc.duration_since(tic);
@@ -74,20 +74,20 @@ fn main() {
         seq_time / seq_needles.len() as u32
     );
 
-    bench_forest::<1>(&points, &seq_needles, &mut rng);
-    bench_forest::<2>(&points, &seq_needles, &mut rng);
-    bench_forest::<3>(&points, &seq_needles, &mut rng);
-    bench_forest::<4>(&points, &seq_needles, &mut rng);
-    bench_forest::<5>(&points, &seq_needles, &mut rng);
-    bench_forest::<6>(&points, &seq_needles, &mut rng);
-    bench_forest::<7>(&points, &seq_needles, &mut rng);
-    bench_forest::<8>(&points, &seq_needles, &mut rng);
-    bench_forest::<9>(&points, &seq_needles, &mut rng);
-    bench_forest::<10>(&points, &seq_needles, &mut rng);
+    bench_forest::<1>(&points, &simd_needles, &mut rng);
+    bench_forest::<2>(&points, &simd_needles, &mut rng);
+    bench_forest::<3>(&points, &simd_needles, &mut rng);
+    bench_forest::<4>(&points, &simd_needles, &mut rng);
+    bench_forest::<5>(&points, &simd_needles, &mut rng);
+    bench_forest::<6>(&points, &simd_needles, &mut rng);
+    bench_forest::<7>(&points, &simd_needles, &mut rng);
+    bench_forest::<8>(&points, &simd_needles, &mut rng);
+    bench_forest::<9>(&points, &simd_needles, &mut rng);
+    bench_forest::<10>(&points, &simd_needles, &mut rng);
 
     let tic = Instant::now();
     for needle in &simd_needles {
-        black_box(kdt.query::<L>(needle));
+        black_box(kdt.might_collide_simd::<L>(needle, Simd::splat(0.0001)));
     }
     let toc = Instant::now();
     let simd_time = toc.duration_since(tic);
@@ -108,18 +108,18 @@ fn main() {
     )
 }
 
-fn bench_forest<const T: usize>(points: &[[f32; 3]], needles: &[[f32; 3]], rng: &mut impl Rng) {
+fn bench_forest<const T: usize>(points: &[[f32; 3]], simd_needles: &[[Simd<f32, L>; 3]], rng: &mut impl Rng) {
     let forest = PkdForest::<3, T>::new(points, rng);
 
     let tic = Instant::now();
-    for needle in needles.chunks_exact(L) {
-        black_box(forest.query(needle.split_array_ref::<L>().0));
+    for needle in simd_needles {
+        black_box(forest.might_collide_simd(needle, Simd::splat(0.02f32.powi(2))));
     }
     let toc = Instant::now();
     println!(
         "completed forest (T={T}) in {:?} ({:?}/pt, {:?}/q)",
         toc - tic,
-        (toc - tic) / needles.len() as u32,
-        (toc - tic) / (needles.len() / L) as u32,
+        (toc - tic) / (simd_needles.len() * L) as u32,
+        (toc - tic) / simd_needles.len() as u32,
     );
 }

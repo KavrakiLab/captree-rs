@@ -3,7 +3,10 @@
 use std::{
     hint::unreachable_unchecked,
     mem::MaybeUninit,
-    simd::{LaneCount, Mask, Simd, SimdConstPtr, SimdFloat, SimdPartialOrd, SupportedLaneCount},
+    simd::{
+        LaneCount, Mask, Simd, SimdConstPtr, SimdFloat, SimdPartialEq, SimdPartialOrd,
+        SupportedLaneCount,
+    },
 };
 
 use rand::Rng;
@@ -52,6 +55,13 @@ impl<const D: usize, const T: usize> PkdForest<D, T> {
     }
 
     #[must_use]
+    pub fn might_collide(&self, needle: [f32; D], r_squared: f32) -> bool {
+        self.test_seqs
+            .iter()
+            .any(|t| distsq(t.query1(needle), needle) < r_squared)
+    }
+
+    #[must_use]
     pub fn query<const L: usize>(&self, needles: &[[f32; D]; L]) -> [f32; L]
     where
         LaneCount<L>: SupportedLaneCount,
@@ -74,6 +84,41 @@ impl<const D: usize, const T: usize> PkdForest<D, T> {
         }
 
         best_distance.into()
+    }
+
+    #[must_use]
+    pub fn might_collide_simd<const L: usize>(
+        &self,
+        needles: &[Simd<f32, L>; D],
+        radii_squared: Simd<f32, L>,
+    ) -> Mask<isize, L>
+    where
+        LaneCount<L>: SupportedLaneCount,
+    {
+        let mut not_yet_collided = Mask::splat(true);
+
+        for tree in &self.test_seqs {
+            let indices = tree.mask_query(needles, not_yet_collided);
+            let mut dists_sq = Simd::splat(0.0);
+            let mut ptrs = Simd::splat((tree.points.as_ref() as *const [[f32; D]]).cast::<f32>())
+                .wrapping_add(indices);
+            for needle_set in needles {
+                let diffs =
+                    unsafe { Simd::gather_select_ptr(ptrs, not_yet_collided, Simd::splat(0.0)) }
+                        - needle_set;
+                dists_sq += diffs * diffs;
+                ptrs = ptrs.wrapping_add(Simd::splat(1));
+            }
+
+            not_yet_collided &= radii_squared.simd_lt(dists_sq).cast();
+
+            if (!not_yet_collided).all() {
+                // all have collided - can return quickly
+                break;
+            }
+        }
+
+        !not_yet_collided
     }
 }
 
@@ -177,6 +222,48 @@ impl<const D: usize> RandomizedTree<D> {
                 needle_start_ptrs.wrapping_add(dim_nrs.as_array().map(|x| x as usize).into());
             let needle_values = unsafe { Simd::gather_ptr(needle_ptrs) };
             let cmp_results: Mask<isize, L> = needle_values.simd_lt(relevant_tests).into();
+
+            // TODO is there a faster way than using a conditional select?
+            test_idxs <<= Simd::splat(1);
+            test_idxs += cmp_results.select(Simd::splat(1), Simd::splat(2));
+        }
+
+        test_idxs - Simd::splat(self.tests.len())
+    }
+
+    #[allow(clippy::cast_possible_truncation)]
+    /// Perform a masked SIMD query of this tree, only determining the location of the nearest
+    /// neighbors for points in `mask`.
+    pub fn mask_query<const L: usize>(
+        &self,
+        needles: &[Simd<f32, L>; D],
+        mask: Mask<isize, L>,
+    ) -> Simd<usize, L>
+    where
+        LaneCount<L>: SupportedLaneCount,
+    {
+        let mut test_idxs: Simd<usize, L> = Simd::splat(0);
+        let n2 = self.tests.len() + 1;
+        debug_assert!(n2.is_power_of_two());
+
+        // in release mode, tell the compiler about this invariant
+        if !n2.is_power_of_two() {
+            unsafe { unreachable_unchecked() };
+        }
+
+        // Advance the tests forward
+        for _ in 0..n2.ilog2() as usize {
+            let relevant_tests: Simd<f32, L> = unsafe {
+                Simd::gather_select_unchecked(&self.tests, mask, test_idxs, Simd::splat(f32::NAN))
+            };
+            let dim_nrs = unsafe {
+                Simd::gather_select_unchecked(&self.test_dims, mask, test_idxs, Simd::splat(0))
+            };
+            let mut cmp_results = Mask::splat(false);
+            for (d, &these_needles) in needles.iter().enumerate() {
+                let loading_this_dim = dim_nrs.simd_eq(Simd::splat(d as u8)).cast() & mask;
+                cmp_results |= loading_this_dim & these_needles.simd_lt(relevant_tests).cast();
+            }
 
             // TODO is there a faster way than using a conditional select?
             test_idxs <<= Simd::splat(1);
