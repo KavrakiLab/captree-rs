@@ -1,6 +1,10 @@
 #![feature(portable_simd)]
 
-use std::{env, path::Path};
+use std::{
+    env,
+    path::Path,
+    simd::{LaneCount, Simd, SupportedLaneCount},
+};
 
 use hdf5::{File, Result};
 use rand::{Rng, SeedableRng};
@@ -42,18 +46,21 @@ pub fn get_points(n_points_if_no_cloud: usize) -> Vec<[f32; 3]> {
 pub fn make_needles<const D: usize, const L: usize>(
     rng: &mut impl Rng,
     n_trials: usize,
-) -> (Vec<[f32; D]>, Vec<[[f32; L]; D]>) {
+) -> (Vec<[f32; D]>, Vec<[Simd<f32, L>; D]>)
+where
+    LaneCount<L>: SupportedLaneCount,
+{
     let mut seq_needles = Vec::new();
     let mut simd_needles = Vec::new();
 
     for _ in 0..n_trials / L {
-        let mut simd_pts = [[0.0; L]; D];
+        let mut simd_pts = [Simd::splat(0.0); D];
         for l in 0..L {
             let mut seq_needle = [0.0; D];
             for d in 0..3 {
                 let value = rng.gen_range::<f32, _>(0.0..1.0);
                 seq_needle[d] = value;
-                simd_pts[d][l] = value;
+                simd_pts[d].as_mut_array()[l] = value;
             }
             seq_needles.push(seq_needle);
         }

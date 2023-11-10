@@ -28,10 +28,7 @@ pub struct PkdTree<const D: usize> {
     /// The length of `tests` must be `N`, rounded up to the next power of 2, minus one.
     tests: Box<[f32]>,
     /// The relevant points at the center of each volume divided by `tests`.
-    ///
-    /// If there are `N` points in the tree, let `N2` be `N` rounded up to the next power of 2.
-    /// Then `points` has length `N2 * D`.
-    points: Box<[f32]>,
+    points: Box<[[f32; D]]>,
 }
 
 impl<const D: usize> PkdTree<D> {
@@ -79,16 +76,9 @@ impl<const D: usize> PkdTree<D> {
         new_points[..points.len()].copy_from_slice(points);
         recur_sort_points(new_points.as_mut(), tests.as_mut(), 0, 0);
 
-        let mut my_points = vec![f32::NAN; n2 * D].into_boxed_slice();
-        for (i, pt) in new_points.iter().enumerate() {
-            for (d, value) in (*pt).into_iter().enumerate() {
-                my_points[d * n2 + i] = value;
-            }
-        }
-
         PkdTree {
             tests,
-            points: my_points,
+            points: new_points.into(),
         }
     }
 
@@ -98,7 +88,7 @@ impl<const D: usize> PkdTree<D> {
     ///
     /// TODO: refactor this to use `needles` as an out parameter as well, and shove the nearest
     /// points in there?
-    pub fn query<const L: usize>(&self, needles: &[[f32; L]; D]) -> [usize; L]
+    pub fn query<const L: usize>(&self, needles: &[Simd<f32, L>; D]) -> Simd<usize, L>
     where
         LaneCount<L>: SupportedLaneCount,
     {
@@ -116,15 +106,14 @@ impl<const D: usize> PkdTree<D> {
             let test_ptrs = Simd::splat((self.tests.as_ref() as *const [f32]).cast::<f32>())
                 .wrapping_add(test_idxs);
             let relevant_tests: Simd<f32, L> = unsafe { Simd::gather_ptr(test_ptrs) };
-            let needle_values = Simd::from_array(needles[i % D]);
-            let cmp_results: Mask<isize, L> = needle_values.simd_lt(relevant_tests).into();
+            let cmp_results: Mask<isize, L> = needles[i % D].simd_lt(relevant_tests).into();
 
             // TODO is there a faster way than using a conditional select?
             test_idxs <<= Simd::splat(1);
             test_idxs += cmp_results.select(Simd::splat(1), Simd::splat(2));
         }
 
-        (test_idxs - Simd::splat(self.tests.len())).into()
+        test_idxs - Simd::splat(self.tests.len())
     }
 
     #[must_use]
@@ -147,6 +136,34 @@ impl<const D: usize> PkdTree<D> {
         }
 
         test_idx - self.tests.len()
+    }
+
+    #[must_use]
+    /// Determine whether a ball centered at `needle` with radius `r_squared` could collide with a
+    /// point in this tree.
+    pub fn might_collide(&self, needle: [f32; D], r_squared: f32) -> bool {
+        distsq(self.get_point(self.query1(needle)), needle) <= r_squared
+    }
+
+    #[must_use]
+    pub fn might_collide_simd<const L: usize>(
+        &self,
+        needles: &[Simd<f32, L>; D],
+        radii_squared: Simd<f32, L>,
+    ) -> Mask<i32, L>
+    where
+        LaneCount<L>: SupportedLaneCount,
+    {
+        let indices = self.query(needles);
+        let mut dists_squared = Simd::splat(0.0);
+        let mut ptrs = Simd::splat((self.points.as_ref() as *const [[f32; D]]).cast::<f32>())
+            .wrapping_add(indices * Simd::splat(D));
+        for needle_values in needles {
+            let deltas = unsafe { Simd::gather_ptr(ptrs) } - needle_values;
+            dists_squared += deltas * deltas;
+            ptrs = ptrs.wrapping_add(Simd::splat(1));
+        }
+        dists_squared.simd_lt(radii_squared)
     }
 
     #[must_use]
@@ -239,14 +256,7 @@ impl<const D: usize> PkdTree<D> {
     #[must_use]
     #[allow(clippy::missing_panics_doc)]
     pub fn get_point(&self, id: usize) -> [f32; D] {
-        let mut point = [0.0; D];
-        let n2 = self.tests.len() + 1;
-        assert!(n2.is_power_of_two());
-        for (d, value) in point.iter_mut().enumerate() {
-            *value = self.points[d * n2 + id];
-        }
-
-        point
+        self.points[id]
     }
 }
 
@@ -317,8 +327,8 @@ mod tests {
         ];
         let kdt = PkdTree::new(&points);
 
-        let needles = [[-1.0, 2.0], [-1.0, 2.0]];
-        assert_eq!(kdt.query(&needles), [0, points.len() - 1]);
+        let needles = [Simd::from_array([-1.0, 2.0]), Simd::from_array([-1.0, 2.0])];
+        assert_eq!(kdt.query(&needles), Simd::from_array([0, points.len() - 1]));
     }
 
     #[test]
