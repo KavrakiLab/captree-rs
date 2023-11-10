@@ -113,7 +113,7 @@ fn bench_forest<const T: usize>(points: &[[f32; 3]], simd_needles: &[[Simd<f32, 
 
     let tic = Instant::now();
     for needle in simd_needles {
-        black_box(forest.might_collide_simd(needle, Simd::splat(0.0001)));
+        black_box(forest.might_collide_simd(needle, Simd::splat(0.02f32.powi(2))));
     }
     let toc = Instant::now();
     println!(

@@ -259,12 +259,11 @@ impl<const D: usize> RandomizedTree<D> {
             let dim_nrs = unsafe {
                 Simd::gather_select_unchecked(&self.test_dims, mask, test_idxs, Simd::splat(0))
             };
-            let mut needle_values = Simd::splat(f32::NAN);
+            let mut cmp_results = Mask::splat(false);
             for (d, &these_needles) in needles.iter().enumerate() {
-                let loading_this_dim = dim_nrs.simd_eq(Simd::splat(d as u8)) & mask.cast();
-                needle_values = loading_this_dim.cast().select(these_needles, needle_values);
+                let loading_this_dim = dim_nrs.simd_eq(Simd::splat(d as u8)).cast() & mask;
+                cmp_results |= loading_this_dim & these_needles.simd_lt(relevant_tests).cast();
             }
-            let cmp_results: Mask<isize, L> = needle_values.simd_lt(relevant_tests).into();
 
             // TODO is there a faster way than using a conditional select?
             test_idxs <<= Simd::splat(1);

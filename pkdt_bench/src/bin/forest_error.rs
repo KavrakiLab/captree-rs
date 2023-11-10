@@ -54,10 +54,11 @@ fn err_forest<const T: usize>(points: &[[f32; 3]], rng: &mut impl Rng) {
         let (_, forest_distsq) = forest.query1(needle);
         let (exact_distsq, _) = kiddo_kdt.nearest_one(&needle, &kiddo::distance::squared_euclidean);
 
-        let err = forest_distsq.sqrt() - exact_distsq.sqrt();
+        let exact_dist = exact_distsq.sqrt();
+        let err = forest_distsq.sqrt() - exact_dist;
         total_err += err;
         let rel_err = err / exact_distsq.sqrt();
-        println!("{T}\t{err}\t{rel_err}");
+        println!("{T}\t{err}\t{rel_err}\t{exact_dist}");
     }
 
     eprintln!("T={T}: mean error {}", total_err / seq_needles.len() as f32);
