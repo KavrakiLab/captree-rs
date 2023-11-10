@@ -110,7 +110,7 @@ impl<const D: usize, const T: usize> PkdForest<D, T> {
                 ptrs = ptrs.wrapping_add(Simd::splat(1));
             }
 
-            not_yet_collided &= dists_sq.simd_lt(radii_squared).cast();
+            not_yet_collided &= radii_squared.simd_lt(dists_sq).cast();
 
             if (!not_yet_collided).all() {
                 // all have collided - can return quickly
