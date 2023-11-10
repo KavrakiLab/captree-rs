@@ -19,7 +19,12 @@ pub struct BallTree<const D: usize, const LW: usize> {
 }
 
 impl<const LW: usize> BallTree<3, LW> {
-    /// I was too lazy to try to figure out how to compute the circumsphere of an N-dimensional set of points.
+    /// I was too lazy to try to figure out how to compute the circumsphere of an N-dimensional set
+    /// of points.
+    ///
+    /// # Panics
+    ///
+    /// This function will panic if `LW` is 0.
     pub fn new3(points: impl IntoIterator<Item = [f32; 3]>, rng: &mut impl Rng) -> Self {
         fn ball_partition<const LW: usize>(
             points_to_partition: &mut [[f32; 3]],
@@ -190,7 +195,9 @@ impl Ball<3> {
             for point in boundary {
                 let dist = distsq(*point, ball.center);
                 debug_assert!(dist <= ball.r_squared);
-                debug_assert!(ball.r_squared * 0.95 <= dist);
+                debug_assert!(
+                    ball.r_squared * 0.99 <= dist || ball.r_squared - 2.0 * FUDGE_FACTOR <= dist
+                );
             }
             return ball;
         }
