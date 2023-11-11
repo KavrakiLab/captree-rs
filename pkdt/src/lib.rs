@@ -150,7 +150,7 @@ impl<const D: usize> PkdTree<D> {
         &self,
         needles: &[Simd<f32, L>; D],
         radii_squared: Simd<f32, L>,
-    ) -> Mask<i32, L>
+    ) -> bool
     where
         LaneCount<L>: SupportedLaneCount,
     {
@@ -163,7 +163,7 @@ impl<const D: usize> PkdTree<D> {
             dists_squared += deltas * deltas;
             ptrs = ptrs.wrapping_add(Simd::splat(1));
         }
-        dists_squared.simd_lt(radii_squared)
+        dists_squared.simd_lt(radii_squared).any()
     }
 
     #[must_use]
