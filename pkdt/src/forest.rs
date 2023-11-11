@@ -112,7 +112,7 @@ impl<const D: usize, const T: usize> PkdForest<D, T> {
 
             not_yet_collided &= radii_squared.simd_lt(dists_sq).cast();
 
-            if (!not_yet_collided).all() {
+            if !not_yet_collided.all() {
                 // all have collided - can return quickly
                 break;
             }
