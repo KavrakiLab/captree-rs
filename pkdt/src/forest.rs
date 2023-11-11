@@ -4,7 +4,7 @@ use std::{
     hint::unreachable_unchecked,
     mem::MaybeUninit,
     simd::{
-        LaneCount, Mask, Simd, SimdConstPtr, SimdFloat, SimdPartialEq, SimdPartialOrd,
+        LaneCount, Mask, Simd, SimdConstPtr, SimdPartialEq, SimdPartialOrd,
         SupportedLaneCount,
     },
 };
@@ -62,36 +62,11 @@ impl<const D: usize, const T: usize> PkdForest<D, T> {
     }
 
     #[must_use]
-    pub fn query<const L: usize>(&self, needles: &[[f32; D]; L]) -> [f32; L]
-    where
-        LaneCount<L>: SupportedLaneCount,
-    {
-        let mut best_distance = Simd::splat(f32::INFINITY);
-
-        for tree in &self.test_seqs {
-            let point_ids = tree.query(needles);
-            let mut value_ptrs =
-                Simd::splat((tree.points.as_ref() as *const [[f32; D]]).cast::<f32>())
-                    .wrapping_add(point_ids);
-            let mut distance = Simd::splat(0.0);
-            for _ in 0..D {
-                let values = unsafe { Simd::gather_ptr(value_ptrs) };
-                distance += values * values;
-                value_ptrs = value_ptrs.wrapping_add(Simd::splat(1));
-            }
-
-            best_distance = best_distance.simd_min(distance);
-        }
-
-        best_distance.into()
-    }
-
-    #[must_use]
     pub fn might_collide_simd<const L: usize>(
         &self,
         needles: &[Simd<f32, L>; D],
         radii_squared: Simd<f32, L>,
-    ) -> Mask<isize, L>
+    ) -> bool
     where
         LaneCount<L>: SupportedLaneCount,
     {
@@ -112,13 +87,13 @@ impl<const D: usize, const T: usize> PkdForest<D, T> {
 
             not_yet_collided &= radii_squared.simd_lt(dists_sq).cast();
 
-            if (!not_yet_collided).all() {
+            if !not_yet_collided.all() {
                 // all have collided - can return quickly
-                break;
+                return true;
             }
         }
 
-        !not_yet_collided
+        false
     }
 }
 
@@ -190,51 +165,10 @@ impl<const D: usize> RandomizedTree<D> {
         self.points[test_idx - self.tests.len()]
     }
 
-    pub fn query<const L: usize>(&self, needles: &[[f32; D]; L]) -> Simd<usize, L>
-    where
-        LaneCount<L>: SupportedLaneCount,
-    {
-        let mut test_idxs: Simd<usize, L> = Simd::splat(0);
-        let n2 = self.tests.len() + 1;
-        debug_assert!(n2.is_power_of_two());
-
-        // in release mode, tell the compiler about this invariant
-        if !n2.is_power_of_two() {
-            unsafe { unreachable_unchecked() };
-        }
-
-        let mut needle_offsets = Simd::splat(0);
-        for (i, elem) in needle_offsets.as_mut_array().iter_mut().enumerate() {
-            *elem = i * L;
-        }
-        let needle_start_ptrs = Simd::splat((needles as *const [[f32; D]; L]).cast::<f32>())
-            .wrapping_add(needle_offsets);
-
-        // Advance the tests forward
-        for _ in 0..n2.ilog2() as usize {
-            let test_ptrs = Simd::splat((self.tests.as_ref() as *const [f32]).cast::<f32>())
-                .wrapping_add(test_idxs);
-            let dim_ptrs = Simd::splat((self.test_dims.as_ref() as *const [u8]).cast::<u8>())
-                .wrapping_add(test_idxs);
-            let relevant_tests: Simd<f32, L> = unsafe { Simd::gather_ptr(test_ptrs) };
-            let dim_nrs = unsafe { Simd::gather_ptr(dim_ptrs) };
-            let needle_ptrs =
-                needle_start_ptrs.wrapping_add(dim_nrs.as_array().map(|x| x as usize).into());
-            let needle_values = unsafe { Simd::gather_ptr(needle_ptrs) };
-            let cmp_results: Mask<isize, L> = needle_values.simd_lt(relevant_tests).into();
-
-            // TODO is there a faster way than using a conditional select?
-            test_idxs <<= Simd::splat(1);
-            test_idxs += cmp_results.select(Simd::splat(1), Simd::splat(2));
-        }
-
-        test_idxs - Simd::splat(self.tests.len())
-    }
-
     #[allow(clippy::cast_possible_truncation)]
     /// Perform a masked SIMD query of this tree, only determining the location of the nearest
     /// neighbors for points in `mask`.
-    pub fn mask_query<const L: usize>(
+    fn mask_query<const L: usize>(
         &self,
         needles: &[Simd<f32, L>; D],
         mask: Mask<isize, L>,
