@@ -4,8 +4,7 @@ use std::{
     hint::unreachable_unchecked,
     mem::MaybeUninit,
     simd::{
-        LaneCount, Mask, Simd, SimdConstPtr, SimdPartialEq, SimdPartialOrd,
-        SupportedLaneCount,
+        LaneCount, Mask, Simd, SimdConstPtr, SimdPartialEq, SimdPartialOrd, SupportedLaneCount,
     },
 };
 

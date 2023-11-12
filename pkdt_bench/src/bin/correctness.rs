@@ -3,7 +3,6 @@ use rand::SeedableRng;
 use rand_chacha::ChaCha20Rng;
 
 const N: usize = 1 << 12;
-const L: usize = 16;
 
 fn main() {
     let points = get_points(N);
@@ -16,21 +15,27 @@ fn main() {
         kiddo_kdt.add(pt, 0);
     }
 
-    let (seq_needles, simd_needles) = make_needles(&mut rng, n_trials);
+    let (needles, _) = make_needles::<3, 2>(&mut rng, n_trials);
+    let ball_tree = pkdt::BallTree::<3, 2>::new3(&points, &mut rng);
 
-    for (i, simd_needle) in simd_needles.iter().enumerate() {
-        let simd_idxs = kdt.query::<L>(simd_needle);
-        for l in 0..L {
-            println!("iter {}", i * L + l);
-            let seq_needle = seq_needles[i * L + l];
-            let q1 = simd_idxs[l];
-            assert_eq!(q1, simd_idxs[l]);
-            let exact_kiddo_dist = kiddo_kdt
-                .nearest_one(&seq_needle, &kiddo::distance::squared_euclidean)
-                .0
-                .sqrt();
-            let exact_dist = dist(kdt.get_point(kdt.query1_exact(seq_needle)), seq_needle);
-            assert_eq!(exact_dist, exact_kiddo_dist);
-        }
+    for (i, &needle) in needles.iter().enumerate() {
+        println!("iter {i}");
+        let exact_kiddo_dist = kiddo_kdt
+            .nearest_one(&needle, &kiddo::distance::squared_euclidean)
+            .0
+            .sqrt();
+        let exact_dist = dist(kdt.get_point(kdt.query1_exact(needle)), needle);
+        assert_eq!(exact_dist, exact_kiddo_dist);
+
+        assert!(ball_tree.collides(needle, exact_kiddo_dist + f32::EPSILON));
+
+        assert!(!ball_tree.collides(
+            needle,
+            if exact_kiddo_dist < 0.02 {
+                f32::EPSILON
+            } else {
+                exact_kiddo_dist - 0.02f32
+            }
+        ));
     }
 }

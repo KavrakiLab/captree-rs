@@ -8,13 +8,14 @@ use crate::distsq;
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct Ball<const D: usize> {
     center: [f32; D],
-    r_squared: f32,
+    radius: f32,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 #[allow(clippy::module_name_repetitions)]
 pub struct BallTree<const D: usize, const LW: usize> {
     balls: Box<[Ball<D>]>,
+    leaf_start: usize,
     points: Box<[[f32; D]]>,
 }
 
@@ -25,17 +26,19 @@ impl<const LW: usize> BallTree<3, LW> {
     /// # Panics
     ///
     /// This function will panic if `LW` is 0.
-    pub fn new3(points: impl IntoIterator<Item = [f32; 3]>, rng: &mut impl Rng) -> Self {
+    pub fn new3(points: &[[f32; 3]], rng: &mut impl Rng) -> Self {
         fn ball_partition<const LW: usize>(
             points_to_partition: &mut [[f32; 3]],
             balls: &mut [Ball<3>],
             points_buf: &mut [[f32; 3]],
             i: usize,
+            leaf_start: &mut Option<usize>,
             rng: &mut impl Rng,
         ) {
             if points_to_partition.len() <= LW {
-                // populate points buffer correctly
-                println!("{i}");
+                let ls = *leaf_start.get_or_insert(i);
+                points_buf[(i - ls) * LW..][..points_to_partition.len()]
+                    .copy_from_slice(points_to_partition);
                 return;
             }
             // construct the enveloping ball of all the points
@@ -56,6 +59,7 @@ impl<const LW: usize> BallTree<3, LW> {
                 balls,
                 points_buf,
                 2 * i + 1,
+                leaf_start,
                 rng,
             );
             ball_partition::<LW>(
@@ -63,25 +67,60 @@ impl<const LW: usize> BallTree<3, LW> {
                 balls,
                 points_buf,
                 2 * i + 2,
+                leaf_start,
                 rng,
             );
         }
 
         assert!(LW > 0);
 
-        let mut points_to_partition = points.into_iter().collect::<Box<_>>();
+        let mut points_to_partition = points.iter().copied().collect::<Box<_>>();
         let n2 = points_to_partition.len().next_power_of_two();
-        let mut balls = vec![Ball::<3>::bad_ball(); n2];
-        let mut points_buf = vec![[f32::NAN; 3]; n2].into_boxed_slice();
+        let n_leaves = n2 / LW; // TODO: this could be wrong if `LW` is not a power of 2
+        let mut balls = vec![Ball::<3>::bad_ball(); 2 * n_leaves - 1].into_boxed_slice();
+        let mut points_buf = vec![[f32::INFINITY; 3]; n_leaves * LW * 2].into_boxed_slice();
+        let mut leaf_start = None;
 
         ball_partition::<LW>(
             &mut points_to_partition,
             &mut balls,
             &mut points_buf,
             0,
+            &mut leaf_start,
             rng,
         );
-        todo!()
+
+        BallTree {
+            balls,
+            leaf_start: leaf_start.unwrap(),
+            points: points_buf,
+        }
+    }
+}
+
+impl<const D: usize, const LW: usize> BallTree<D, LW> {
+    #[must_use]
+    pub fn collides(&self, needle: [f32; D], radius: f32) -> bool {
+        self.collides_help(0, needle, radius)
+    }
+
+    /// Assumes that we already know that the ball at `test_idx` is in collision.
+    fn collides_help(&self, test_idx: usize, needle: [f32; D], radius: f32) -> bool {
+        if test_idx >= self.balls.len() {
+            // println!("{test_idx} is terminal");
+            return self.points[((test_idx - 1) / 2 - self.leaf_start) * LW..][..LW]
+                .iter()
+                .any(|&p| distsq(p, needle) < radius.powi(2));
+        }
+        let ball = &self.balls[test_idx];
+        if (radius + ball.radius).powi(2) < distsq(ball.center, needle) {
+            // println!("{test_idx} bailed!");
+            return false;
+        }
+
+        // println!("{test_idx} carries on");
+        self.collides_help(2 * test_idx + 1, needle, radius)
+            || self.collides_help(2 * test_idx + 2, needle, radius)
     }
 }
 
@@ -89,12 +128,12 @@ impl<const D: usize> Ball<D> {
     const fn bad_ball() -> Self {
         Ball {
             center: [f32::NAN; D],
-            r_squared: f32::NAN,
+            radius: f32::NAN,
         }
     }
 
     fn contains(&self, point: &[f32; D]) -> bool {
-        distsq(self.center, *point) <= self.r_squared
+        distsq(self.center, *point) <= self.radius.powi(2)
     }
 }
 
@@ -142,13 +181,13 @@ impl Ball<3> {
 
             let ball = Ball {
                 center,
-                r_squared: little_m[0] / 4.0 + FUDGE_FACTOR,
+                radius: little_m[0].sqrt() / 2.0 + FUDGE_FACTOR,
             };
 
             for point in boundary {
                 let dist = distsq(*point, ball.center);
-                debug_assert!(dist <= ball.r_squared);
-                debug_assert!(ball.r_squared * 0.999 < dist);
+                debug_assert!(dist <= ball.radius.powi(2));
+                debug_assert!(ball.radius.powi(2) * 0.999 < dist);
             }
             return ball;
         }
@@ -156,11 +195,11 @@ impl Ball<3> {
             let ball = match boundary.len() {
                 0 => Ball {
                     center: [f32::NAN; 3],
-                    r_squared: f32::NAN,
+                    radius: f32::NAN,
                 },
                 1 => Ball {
                     center: boundary[0],
-                    r_squared: 0.0,
+                    radius: 0.0,
                 },
                 2 => {
                     let mut center = boundary[0];
@@ -169,7 +208,7 @@ impl Ball<3> {
                     }
                     Ball {
                         center: center.map(|c| c / 2.0),
-                        r_squared: distsq(boundary[0], boundary[1]) / 4.0 + FUDGE_FACTOR,
+                        radius: distsq(boundary[0], boundary[1]).sqrt() / 2.0 + FUDGE_FACTOR,
                     }
                 }
                 3 => {
@@ -187,16 +226,17 @@ impl Ball<3> {
 
                     Ball {
                         center: [center[0], center[1], center[2]],
-                        r_squared,
+                        radius: r_squared.sqrt(),
                     }
                 }
                 _ => unreachable!("too many points on boundary"),
             };
             for point in boundary {
                 let dist = distsq(*point, ball.center);
-                debug_assert!(dist <= ball.r_squared);
+                debug_assert!(dist <= ball.radius.powi(2));
                 debug_assert!(
-                    ball.r_squared * 0.99 <= dist || ball.r_squared - 2.0 * FUDGE_FACTOR <= dist
+                    ball.radius.powi(2) * 0.99 <= dist
+                        || ball.radius.powi(2) - 2.0 * FUDGE_FACTOR <= dist
                 );
             }
             return ball;
@@ -284,8 +324,41 @@ mod tests {
             [0.1, -0.1, -0.1],
             [-2.1, -3.4, 0.0],
         ];
-        let tree = BallTree::<3, 2>::new3(points, &mut thread_rng());
+        let tree = BallTree::<3, 2>::new3(&points, &mut thread_rng());
         println!("{tree:?}");
+    }
+
+    #[test]
+    fn no_collision() {
+        let points = [
+            [0.0, 1.0, 1.1],
+            [0.1, 2.3, -0.2],
+            [-0.1, 1.1, 3.3],
+            [0.0, 0.0, 0.0],
+            [3.3, 3.3, 3.3],
+            [0.1, -0.1, -0.1],
+            [-2.1, -3.4, 0.0],
+        ];
+        let tree = BallTree::<3, 2>::new3(&points, &mut thread_rng());
+
+        assert!(!tree.collides([0.0, 0.1, 0.0], 0.0));
+    }
+
+    #[test]
+    fn in_collision() {
+        let points = [
+            [0.0, 1.0, 1.1],
+            [0.1, 2.3, -0.2],
+            [-0.1, 1.1, 3.3],
+            [0.0, 0.0, 0.0],
+            [3.3, 3.3, 3.3],
+            [0.1, -0.1, -0.1],
+            [-2.1, -3.4, 0.0],
+        ];
+        let tree = BallTree::<3, 2>::new3(&points, &mut thread_rng());
+
+        println!("{tree:?}");
+        assert!(tree.collides([0.0, 0.1, 0.0], 0.12));
     }
 
     #[test]

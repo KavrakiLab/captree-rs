@@ -2,7 +2,7 @@
 
 use std::{hint::black_box, simd::Simd, time::Instant};
 
-use pkdt::PkdForest;
+use pkdt::{BallTree, PkdForest};
 use pkdt_bench::{get_points, make_needles};
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
@@ -85,6 +85,12 @@ fn main() {
     bench_forest::<9>(&points, &simd_needles, &mut rng);
     bench_forest::<10>(&points, &simd_needles, &mut rng);
 
+    bench_ball_tree::<1>(&points, &seq_needles, &mut rng);
+    bench_ball_tree::<2>(&points, &seq_needles, &mut rng);
+    bench_ball_tree::<4>(&points, &seq_needles, &mut rng);
+    bench_ball_tree::<6>(&points, &seq_needles, &mut rng);
+    bench_ball_tree::<8>(&points, &seq_needles, &mut rng);
+
     let tic = Instant::now();
     for needle in &simd_needles {
         black_box(kdt.might_collide_simd::<L>(needle, Simd::splat(0.0001)));
@@ -108,7 +114,11 @@ fn main() {
     )
 }
 
-fn bench_forest<const T: usize>(points: &[[f32; 3]], simd_needles: &[[Simd<f32, L>; 3]], rng: &mut impl Rng) {
+fn bench_forest<const T: usize>(
+    points: &[[f32; 3]],
+    simd_needles: &[[Simd<f32, L>; 3]],
+    rng: &mut impl Rng,
+) {
     let forest = PkdForest::<3, T>::new(points, rng);
 
     let tic = Instant::now();
@@ -121,5 +131,20 @@ fn bench_forest<const T: usize>(points: &[[f32; 3]], simd_needles: &[[Simd<f32, 
         toc - tic,
         (toc - tic) / (simd_needles.len() * L) as u32,
         (toc - tic) / simd_needles.len() as u32,
+    );
+}
+
+fn bench_ball_tree<const LW: usize>(points: &[[f32; 3]], needles: &[[f32; 3]], rng: &mut impl Rng) {
+    let tree = BallTree::<3, LW>::new3(points, rng);
+
+    let tic = Instant::now();
+    for &needle in needles {
+        black_box(tree.collides(needle, 0.01f32));
+    }
+    let toc = Instant::now();
+    println!(
+        "completed ball tree (LW={LW}) in {:?} ({:?}/q)",
+        toc - tic,
+        (toc - tic) / needles.len() as u32,
     );
 }
