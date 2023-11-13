@@ -13,7 +13,7 @@ const L: usize = 16;
 fn main() {
     let points = get_points(N);
     let mut rng = ChaCha20Rng::seed_from_u64(2707);
-    let n_trials = 1 << 16;
+    let n_trials = 1 << 20;
 
     println!("{} points", points.len());
     println!("generating PKDT...");
@@ -85,14 +85,14 @@ fn main() {
     bench_forest::<9>(&points, &simd_needles, &mut rng);
     bench_forest::<10>(&points, &simd_needles, &mut rng);
 
-    // bench_ball_tree::<1>(&points, &seq_needles, &mut rng);
-    // bench_ball_tree::<2>(&points, &seq_needles, &mut rng);
-    // bench_ball_tree::<4>(&points, &seq_needles, &mut rng);
-    // bench_ball_tree::<6>(&points, &seq_needles, &mut rng);
-    // bench_ball_tree::<7>(&points, &seq_needles, &mut rng);
-    // bench_ball_tree::<8>(&points, &seq_needles, &mut rng);
-    // bench_ball_tree::<9>(&points, &seq_needles, &mut rng);
-    // bench_ball_tree::<10>(&points, &seq_needles, &mut rng);
+    bench_ball_tree::<1>(&points, &seq_needles, &mut rng);
+    bench_ball_tree::<2>(&points, &seq_needles, &mut rng);
+    bench_ball_tree::<4>(&points, &seq_needles, &mut rng);
+    bench_ball_tree::<6>(&points, &seq_needles, &mut rng);
+    bench_ball_tree::<7>(&points, &seq_needles, &mut rng);
+    bench_ball_tree::<8>(&points, &seq_needles, &mut rng);
+    bench_ball_tree::<9>(&points, &seq_needles, &mut rng);
+    bench_ball_tree::<10>(&points, &seq_needles, &mut rng);
     let tic = Instant::now();
     for needle in &simd_needles {
         black_box(kdt.might_collide_simd::<L>(needle, Simd::splat(0.0001)));

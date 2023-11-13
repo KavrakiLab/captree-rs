@@ -153,41 +153,40 @@ impl<const D: usize, const LW: usize> BallTree<D, LW> {
     /// This will be a liberal estimate; i.e. this may return `false` when a point is actually in
     /// collision.
     pub fn forward_only_collides(&self, needle: [f32; D], radius: f32) -> bool {
-        distsq(self.balls[0].center, needle) <= (radius + self.balls[0].radius).powi(2)
-            && self.forward_only_collides_help(0, needle, radius)
-    }
-
-    fn forward_only_collides_help(&self, test_idx: usize, needle: [f32; D], radius: f32) -> bool {
-        let left_child_idx = 2 * test_idx + 1;
-        let right_child_idx = left_child_idx + 1;
-
-        if test_idx >= self.leaf_start || self.balls[test_idx].center[0].is_infinite() {
-            return self.points[(test_idx - self.leaf_start) * LW..][..LW]
-                .iter()
-                .any(|&p| distsq(p, needle) < radius.powi(2));
+        let mut test_idx = 0;
+        if distsq(needle, self.balls[0].center) > (radius + self.balls[0].radius).powi(2) {
+            return false;
         }
 
-        // first, figure out the level of collision overlap in each child
-        let left_ball = self.balls[left_child_idx];
-        let right_ball = self.balls[right_child_idx];
-        let left_overlap = (radius + left_ball.radius).powi(2) - distsq(needle, left_ball.center);
-        let right_overlap =
-            (radius + right_ball.radius).powi(2) - distsq(needle, right_ball.center);
+        while test_idx < self.leaf_start {
+            let left_child_idx = 2 * test_idx + 1;
+            let right_child_idx = left_child_idx + 1;
 
-        if left_overlap > 0.0 && right_overlap > 0.0 {
-            // choose subtree with greatest overlap to maximize chance of collision
-            if left_overlap < right_overlap {
-                self.collides_help(right_child_idx, needle, radius)
+            let left_ball = self.balls[left_child_idx];
+            let right_ball = self.balls[right_child_idx];
+            let left_overlap =
+                (radius + left_ball.radius).powi(2) - distsq(needle, left_ball.center);
+            let right_overlap =
+                (radius + right_ball.radius).powi(2) - distsq(needle, right_ball.center);
+
+            if left_overlap > 0.0 && right_overlap > 0.0 {
+                // choose subtree with greatest overlap to maximize chance of collision
+                test_idx = if left_overlap < right_overlap {
+                    right_child_idx
+                } else {
+                    left_child_idx
+                };
+            } else if left_overlap > 0.0 {
+                test_idx = left_child_idx;
+            } else if right_overlap > 0.0 {
+                test_idx = right_child_idx;
             } else {
-                self.collides_help(left_child_idx, needle, radius)
+                return false;
             }
-        } else if left_overlap > 0.0 {
-            self.collides_help(left_child_idx, needle, radius)
-        } else if right_overlap > 0.0 {
-            self.collides_help(right_child_idx, needle, radius)
-        } else {
-            false
         }
+        return self.points[(test_idx - self.leaf_start) * LW..][..LW]
+            .iter()
+            .any(|&p| distsq(p, needle) < radius.powi(2));
     }
 
     #[must_use]
