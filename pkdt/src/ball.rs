@@ -1,5 +1,7 @@
 //! Cache-friendly ball-trees.
 
+use std::cmp::max;
+
 use rand::Rng;
 
 use crate::distsq;
@@ -29,21 +31,24 @@ impl<const LW: usize> BallTree<3, LW> {
     pub fn new3(points: &[[f32; 3]], rng: &mut impl Rng) -> Self {
         fn ball_partition<const LW: usize>(
             points_to_partition: &mut [[f32; 3]],
-            balls: &mut [Ball<3>],
-            points_buf: &mut [[f32; 3]],
+            balls: &mut Vec<Ball<3>>,
+            points_buf: &mut Vec<[f32; 3]>,
             i: usize,
             leaf_start: &mut Option<usize>,
             rng: &mut impl Rng,
         ) {
+            // construct the enveloping ball of all the points
+            let envelope = Ball::covering3(points_to_partition, &mut Vec::with_capacity(4), rng);
+            balls.resize(max(i + 1, balls.len()), Ball::bad_ball());
+            balls[i] = envelope;
+
             if points_to_partition.len() <= LW {
                 let ls = *leaf_start.get_or_insert(i);
+                points_buf.resize(LW * (i - ls + 1), [f32::INFINITY; 3]);
                 points_buf[(i - ls) * LW..][..points_to_partition.len()]
                     .copy_from_slice(points_to_partition);
                 return;
             }
-            // construct the enveloping ball of all the points
-            let envelope = Ball::covering3(points_to_partition, &mut Vec::with_capacity(4), rng);
-            balls[i] = envelope;
 
             // first, find the axis of greatest variance
             let pc = principal_component(points_to_partition, rng);
@@ -74,11 +79,9 @@ impl<const LW: usize> BallTree<3, LW> {
 
         assert!(LW > 0);
 
-        let mut points_to_partition = points.iter().copied().collect::<Box<_>>();
-        let n2 = points_to_partition.len().next_power_of_two();
-        let n_leaves = n2 / LW; // TODO: this could be wrong if `LW` is not a power of 2
-        let mut balls = vec![Ball::<3>::bad_ball(); 2 * n_leaves - 1].into_boxed_slice();
-        let mut points_buf = vec![[f32::INFINITY; 3]; n_leaves * LW * 2].into_boxed_slice();
+        let mut points_to_partition = points.to_vec();
+        let mut balls = Vec::new();
+        let mut points_buf = Vec::new();
         let mut leaf_start = None;
 
         ball_partition::<LW>(
@@ -91,9 +94,9 @@ impl<const LW: usize> BallTree<3, LW> {
         );
 
         BallTree {
-            balls,
+            balls: balls.into_boxed_slice(),
             leaf_start: leaf_start.unwrap(),
-            points: points_buf,
+            points: points_buf.into_boxed_slice(),
         }
     }
 }
@@ -101,34 +104,64 @@ impl<const LW: usize> BallTree<3, LW> {
 impl<const D: usize, const LW: usize> BallTree<D, LW> {
     #[must_use]
     pub fn collides(&self, needle: [f32; D], radius: f32) -> bool {
-        self.collides_help(0, needle, radius)
+        if distsq(needle, self.balls[0].center) < (radius + self.balls[0].radius).powi(2) {
+            self.collides_help(0, needle, radius)
+        } else {
+            false
+        }
     }
 
     /// Assumes that we already know that the ball at `test_idx` is in collision.
     fn collides_help(&self, test_idx: usize, needle: [f32; D], radius: f32) -> bool {
-        if test_idx >= self.balls.len() {
-            // println!("{test_idx} is terminal");
-            return self.points[((test_idx - 1) / 2 - self.leaf_start) * LW..][..LW]
+        let left_child_idx = 2 * test_idx + 1;
+        let right_child_idx = left_child_idx + 1;
+
+        if test_idx >= self.leaf_start || self.balls[test_idx].center[0].is_infinite() {
+            return self.points[(test_idx - self.leaf_start) * LW..][..LW]
                 .iter()
                 .any(|&p| distsq(p, needle) < radius.powi(2));
         }
-        let ball = &self.balls[test_idx];
-        if (radius + ball.radius).powi(2) < distsq(ball.center, needle) {
-            // println!("{test_idx} bailed!");
-            return false;
-        }
 
-        // println!("{test_idx} carries on");
-        self.collides_help(2 * test_idx + 1, needle, radius)
-            || self.collides_help(2 * test_idx + 2, needle, radius)
+        // first, figure out the level of collision overlap in each child
+        let left_ball = self.balls[left_child_idx];
+        let right_ball = self.balls[right_child_idx];
+        let left_overlap = (radius + left_ball.radius).powi(2) - distsq(needle, left_ball.center);
+        let right_overlap =
+            (radius + right_ball.radius).powi(2) - distsq(needle, right_ball.center);
+
+        if left_overlap > 0.0 && right_overlap > 0.0 {
+            // choose subtree with greatest overlap to maximize chance of collision
+            if left_overlap < right_overlap {
+                self.collides_help(right_child_idx, needle, radius)
+                    || self.collides_help(left_child_idx, needle, radius)
+            } else {
+                self.collides_help(left_child_idx, needle, radius)
+                    || self.collides_help(right_child_idx, needle, radius)
+            }
+        } else if left_overlap > 0.0 {
+            self.collides_help(left_child_idx, needle, radius)
+        } else if right_overlap > 0.0 {
+            self.collides_help(right_child_idx, needle, radius)
+        } else {
+            false
+        }
+    }
+
+    #[must_use]
+    /// Test to verify that this ball tree is valid.
+    pub fn is_valid(&self) -> bool {
+        self.points
+            .iter()
+            .all(|&p| p[0].is_infinite() || self.collides(p, f32::EPSILON))
     }
 }
 
 impl<const D: usize> Ball<D> {
+    #[allow(dead_code)]
     const fn bad_ball() -> Self {
         Ball {
-            center: [f32::NAN; D],
-            radius: f32::NAN,
+            center: [f32::INFINITY; D],
+            radius: 0.0,
         }
     }
 
@@ -140,7 +173,7 @@ impl<const D: usize> Ball<D> {
 impl Ball<3> {
     fn covering3(x: &mut [[f32; 3]], boundary: &mut Vec<[f32; 3]>, rng: &mut impl Rng) -> Self {
         // Fudge factor for oversizing ball radii
-        const FUDGE_FACTOR: f32 = 1e-3;
+        const FUDGE_FACTOR: f32 = 1e-4;
 
         debug_assert!(boundary.len() <= 4);
 
@@ -289,7 +322,7 @@ fn dot<const D: usize>(a: &[f32; D], b: &[f32; D]) -> f32 {
 #[cfg(test)]
 mod tests {
 
-    use rand::thread_rng;
+    use rand::{thread_rng, Rng};
 
     use super::{principal_component, Ball, BallTree};
 
@@ -326,6 +359,7 @@ mod tests {
         ];
         let tree = BallTree::<3, 2>::new3(&points, &mut thread_rng());
         println!("{tree:?}");
+        assert!(tree.is_valid());
     }
 
     #[test]
@@ -358,7 +392,7 @@ mod tests {
         let tree = BallTree::<3, 2>::new3(&points, &mut thread_rng());
 
         println!("{tree:?}");
-        assert!(tree.collides([0.0, 0.1, 0.0], 0.12));
+        assert!(tree.collides([0.0, 0.1, 0.0], 0.101));
     }
 
     #[test]
@@ -391,4 +425,17 @@ mod tests {
             assert!(ball.contains(&point));
         }
     }
+
+    #[test]
+    fn fuzz() {
+        let n = 16;
+        let mut rng = rand::thread_rng();
+
+        let points = (0..n).map(|_| [rng.gen_range(0.0..1.0), rng.gen_range(0.0..1.0), rng.gen_range(0.0..1.0)]).collect::<Vec<_>>();
+        let tree = BallTree::<3, 2>::new3(&points, &mut rng);
+        println!("{tree:?}");
+        println!("{:?}", points[0]);
+        assert!(tree.is_valid());
+    }
+
 }

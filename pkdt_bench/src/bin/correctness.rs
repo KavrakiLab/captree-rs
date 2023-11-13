@@ -17,6 +17,8 @@ fn main() {
 
     let (needles, _) = make_needles::<3, 2>(&mut rng, n_trials);
     let ball_tree = pkdt::BallTree::<3, 2>::new3(&points, &mut rng);
+    println!("{ball_tree:?}");
+    assert!(ball_tree.is_valid());
 
     for (i, &needle) in needles.iter().enumerate() {
         println!("iter {i}");

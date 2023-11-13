@@ -89,8 +89,10 @@ fn main() {
     bench_ball_tree::<2>(&points, &seq_needles, &mut rng);
     bench_ball_tree::<4>(&points, &seq_needles, &mut rng);
     bench_ball_tree::<6>(&points, &seq_needles, &mut rng);
+    bench_ball_tree::<7>(&points, &seq_needles, &mut rng);
     bench_ball_tree::<8>(&points, &seq_needles, &mut rng);
-
+    bench_ball_tree::<9>(&points, &seq_needles, &mut rng);
+    bench_ball_tree::<10>(&points, &seq_needles, &mut rng);
     let tic = Instant::now();
     for needle in &simd_needles {
         black_box(kdt.might_collide_simd::<L>(needle, Simd::splat(0.0001)));
