@@ -169,20 +169,14 @@ impl<const D: usize, const LW: usize> BallTree<D, LW> {
             let right_overlap =
                 (radius + right_ball.radius).powi(2) - distsq(needle, right_ball.center);
 
-            if left_overlap > 0.0 && right_overlap > 0.0 {
-                // choose subtree with greatest overlap to maximize chance of collision
-                test_idx = if left_overlap < right_overlap {
-                    right_child_idx
-                } else {
-                    left_child_idx
-                };
-            } else if left_overlap > 0.0 {
-                test_idx = left_child_idx;
-            } else if right_overlap > 0.0 {
-                test_idx = right_child_idx;
-            } else {
+            if left_overlap < 0.0 && right_overlap < 0.0 {
                 return false;
             }
+            test_idx = if left_overlap < right_overlap {
+                right_child_idx
+            } else {
+                left_child_idx
+            };
         }
         return self.points[(test_idx - self.leaf_start) * LW..][..LW]
             .iter()
