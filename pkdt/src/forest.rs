@@ -4,7 +4,7 @@ use std::{
     hint::unreachable_unchecked,
     mem::MaybeUninit,
     simd::{
-        LaneCount, Mask, Simd, SimdConstPtr, SimdPartialEq, SimdPartialOrd, SupportedLaneCount,
+        LaneCount, Mask, Simd, SimdConstPtr, SimdPartialOrd, SupportedLaneCount,
     },
 };
 
@@ -14,8 +14,8 @@ use crate::distsq;
 
 #[derive(Clone, Debug)]
 struct RandomizedTree<const D: usize> {
-    test_dims: Box<[u8]>,
     tests: Box<[f32]>,
+    seed: u32,
     points: Box<[[f32; D]]>,
 }
 
@@ -87,7 +87,7 @@ impl<const D: usize, const T: usize> PkdForest<D, T> {
             not_yet_collided &= radii_squared.simd_lt(dists_sq).cast();
 
             if !not_yet_collided.all() {
-                // all have collided - can return quickly
+                // at least one has collided - can return quickly
                 return true;
             }
         }
@@ -104,18 +104,18 @@ impl<const D: usize> RandomizedTree<D> {
             tests: &mut [f32],
             test_dims: &mut [u8],
             i: usize,
-            rng: &mut impl Rng,
+            state: u32,
         ) {
             // TODO make this algorithm O(n log n) instead of O(n log^2 n)
             if points.len() > 1 {
-                let d = rng.gen_range(0..D);
+                let d = state as usize % D;
                 points.sort_unstable_by(|a, b| a[d].partial_cmp(&b[d]).unwrap());
                 let median = (points[points.len() / 2 - 1][d] + points[points.len() / 2][d]) / 2.0;
                 tests[i] = median;
                 test_dims[i] = u8::try_from(d).unwrap();
                 let (lhs, rhs) = points.split_at_mut(points.len() / 2);
-                recur_sort_points(lhs, tests, test_dims, 2 * i + 1, rng);
-                recur_sort_points(rhs, tests, test_dims, 2 * i + 2, rng);
+                recur_sort_points(lhs, tests, test_dims, 2 * i + 1, xorshift(state));
+                recur_sort_points(rhs, tests, test_dims, 2 * i + 2, xorshift(state));
             }
         }
 
@@ -129,36 +129,39 @@ impl<const D: usize> RandomizedTree<D> {
         let mut new_points = vec![[f32::INFINITY; D]; n2];
         new_points[..points.len()].copy_from_slice(points);
         let mut test_dims = vec![0; n2 - 1].into_boxed_slice();
+        let seed = rng.gen();
         recur_sort_points(
             new_points.as_mut(),
             tests.as_mut(),
             test_dims.as_mut(),
             0,
-            rng,
+            seed,
         );
 
         Self {
             tests,
             points: new_points.into_boxed_slice(),
-            test_dims,
+            seed,
         }
     }
 
     pub fn query1(&self, needle: [f32; D]) -> [f32; D] {
         let n2 = self.tests.len() + 1;
         assert!(n2.is_power_of_two());
-        assert_eq!(self.tests.len(), self.test_dims.len());
 
         let mut test_idx = 0;
+        let mut state = self.seed;
         for _ in 0..n2.ilog2() as usize {
             // println!("current idx: {test_idx}");
-            let add = if needle[self.test_dims[test_idx] as usize] < (self.tests[test_idx]) {
+            let d = state as usize % D;
+            let add = if needle[d] < (self.tests[test_idx]) {
                 1
             } else {
                 2
             };
             test_idx <<= 1;
             test_idx += add;
+            state = xorshift(state);
         }
 
         self.points[test_idx - self.tests.len()]
@@ -176,6 +179,7 @@ impl<const D: usize> RandomizedTree<D> {
         LaneCount<L>: SupportedLaneCount,
     {
         let mut test_idxs: Simd<usize, L> = Simd::splat(0);
+        let mut state = self.seed;
         let n2 = self.tests.len() + 1;
         debug_assert!(n2.is_power_of_two());
 
@@ -189,22 +193,26 @@ impl<const D: usize> RandomizedTree<D> {
             let relevant_tests: Simd<f32, L> = unsafe {
                 Simd::gather_select_unchecked(&self.tests, mask, test_idxs, Simd::splat(f32::NAN))
             };
-            let dim_nrs = unsafe {
-                Simd::gather_select_unchecked(&self.test_dims, mask, test_idxs, Simd::splat(0))
-            };
-            let mut cmp_results = Mask::splat(false);
-            for (d, &these_needles) in needles.iter().enumerate() {
-                let loading_this_dim = dim_nrs.simd_eq(Simd::splat(d as u8)).cast() & mask;
-                cmp_results |= loading_this_dim & these_needles.simd_lt(relevant_tests).cast();
-            }
+            let d = state as usize % D;
+            let cmp_results = needles[d].simd_lt(relevant_tests);
 
             // TODO is there a faster way than using a conditional select?
             test_idxs <<= Simd::splat(1);
-            test_idxs += cmp_results.select(Simd::splat(1), Simd::splat(2));
+            test_idxs += cmp_results.cast().select(Simd::splat(1), Simd::splat(2));
+            state = xorshift(state);
         }
 
         test_idxs - Simd::splat(self.tests.len())
     }
+}
+
+#[inline]
+/// Compute the next value in the xorshift sequence given the most recent value.
+fn xorshift(mut x: u32) -> u32 {
+    x ^= x << 13;
+    x ^= x >> 17;
+    x ^= x << 5;
+    x
 }
 
 #[cfg(test)]
