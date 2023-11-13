@@ -147,6 +147,7 @@ impl<const D: usize, const LW: usize> BallTree<D, LW> {
         }
     }
 
+    #[must_use]
     /// Estimate whether the ball centered at `needle` with radius `radius` collides with one of the
     /// points in this tree.
     /// This will be a liberal estimate; i.e. this may return `false` when a point is actually in

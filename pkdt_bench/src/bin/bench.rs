@@ -136,6 +136,7 @@ fn bench_forest<const T: usize>(
     );
 }
 
+#[allow(dead_code)]
 fn bench_ball_tree<const LW: usize>(points: &[[f32; 3]], needles: &[[f32; 3]], rng: &mut impl Rng) {
     let tree = BallTree::<3, LW>::new3(points, rng);
     let tic = Instant::now();
