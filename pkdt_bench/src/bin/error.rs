@@ -6,6 +6,7 @@ use std::{
     simd::{LaneCount, SupportedLaneCount},
 };
 
+use kiddo::SquaredEuclidean;
 use pkdt_bench::{dist, load_pointcloud, make_needles};
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
@@ -61,8 +62,8 @@ pub fn measure_error<const D: usize, const L: usize>(
             let q1 = simd_idxs[l];
             assert_eq!(q1, simd_idxs[l]);
             let exact_kiddo_dist = kiddo_kdt
-                .nearest_one(&seq_needle, &kiddo::distance::squared_euclidean)
-                .0
+                .nearest_one::<SquaredEuclidean>(&seq_needle)
+                .distance
                 .sqrt();
             let exact_dist = dist(kdt.get_point(kdt.query1_exact(seq_needle)), seq_needle);
             assert_eq!(exact_dist, exact_kiddo_dist);

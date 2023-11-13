@@ -1,5 +1,6 @@
 use std::{env, path::Path};
 
+use kiddo::SquaredEuclidean;
 use pkdt::PkdForest;
 use pkdt_bench::{load_pointcloud, make_needles};
 use rand::{Rng, SeedableRng};
@@ -52,7 +53,7 @@ fn err_forest<const T: usize>(points: &[[f32; 3]], rng: &mut impl Rng) {
     let mut total_err = 0.0;
     for &needle in &seq_needles {
         let (_, forest_distsq) = forest.query1(needle);
-        let (exact_distsq, _) = kiddo_kdt.nearest_one(&needle, &kiddo::distance::squared_euclidean);
+        let exact_distsq = kiddo_kdt.nearest_one::<SquaredEuclidean>(&needle).distance;
 
         let exact_dist = exact_distsq.sqrt();
         let err = forest_distsq.sqrt() - exact_dist;

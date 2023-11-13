@@ -8,7 +8,7 @@ edition = "2021"
 [dependencies]
 hdf5 = { git = "https://github.com/aldanor/hdf5-rust", rev = "26046fb" }
 pkdt = {version = "0.1.0", path = "../pkdt"}
-kiddo = "2.1.2"
+kiddo = "3.0.0"
 rand = "0.8.5"
 rand_chacha = "0.3.1"
 

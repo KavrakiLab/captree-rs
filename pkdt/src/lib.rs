@@ -280,10 +280,11 @@ fn bb_distsq<const D: usize>(point: [f32; D], bb: &[[f32; 2]; D]) -> f32 {
 }
 
 fn distsq<const D: usize>(a: [f32; D], b: [f32; D]) -> f32 {
-    a.into_iter()
-        .zip(b)
-        .map(|(x1, x2)| (x1 - x2).powi(2))
-        .sum::<f32>()
+    let mut total = 0.0f32;
+    for i in 0..D {
+        total += (a[i] - b[i]).powi(2);
+    }
+    total
 }
 
 #[cfg(test)]

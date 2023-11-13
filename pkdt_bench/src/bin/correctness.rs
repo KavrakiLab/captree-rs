@@ -1,3 +1,4 @@
+use kiddo::SquaredEuclidean;
 use pkdt_bench::{dist, get_points, make_needles};
 use rand::SeedableRng;
 use rand_chacha::ChaCha20Rng;
@@ -23,8 +24,8 @@ fn main() {
     for (i, &needle) in needles.iter().enumerate() {
         println!("iter {i}");
         let exact_kiddo_dist = kiddo_kdt
-            .nearest_one(&needle, &kiddo::distance::squared_euclidean)
-            .0
+            .nearest_one::<SquaredEuclidean>(&needle)
+            .distance
             .sqrt();
         let exact_dist = dist(kdt.get_point(kdt.query1_exact(needle)), needle);
         assert_eq!(exact_dist, exact_kiddo_dist);

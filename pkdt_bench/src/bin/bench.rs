@@ -2,6 +2,7 @@
 
 use std::{hint::black_box, simd::Simd, time::Instant};
 
+use kiddo::SquaredEuclidean;
 use pkdt::{BallTree, PkdForest};
 use pkdt_bench::{get_points, make_needles};
 use rand::{Rng, SeedableRng};
@@ -35,12 +36,13 @@ fn main() {
     println!("testing for performance...");
 
     let (seq_needles, simd_needles) = make_needles(&mut rng, n_trials);
+    // let (seq_needles, simd_needles) = make_correlated_needles(&mut rng, n_trials);
 
     println!("testing sequential...");
 
     let tic = Instant::now();
     for needle in &seq_needles {
-        black_box(kiddo_kdt.nearest_one(needle, &kiddo::distance::squared_euclidean));
+        black_box(kiddo_kdt.nearest_one::<SquaredEuclidean>(needle));
     }
     let toc = Instant::now();
     let kiddo_time = toc.duration_since(tic);
@@ -55,11 +57,11 @@ fn main() {
         black_box(kdt.query1_exact(*needle));
     }
     let toc = Instant::now();
-    let exact_time = (toc.duration_since(tic)).as_secs_f64();
+    let exact_time = toc.duration_since(tic);
     println!(
-        "completed exact in {:?}s ({} qps)",
+        "completed exact in {:?} ({:?}/q)",
         exact_time,
-        (simd_needles.len() as f64 / exact_time) as u64
+        exact_time / seq_needles.len() as u32
     );
 
     let tic = Instant::now();
@@ -88,11 +90,10 @@ fn main() {
     bench_ball_tree::<1>(&points, &seq_needles, &mut rng);
     bench_ball_tree::<2>(&points, &seq_needles, &mut rng);
     bench_ball_tree::<4>(&points, &seq_needles, &mut rng);
-    bench_ball_tree::<6>(&points, &seq_needles, &mut rng);
-    bench_ball_tree::<7>(&points, &seq_needles, &mut rng);
     bench_ball_tree::<8>(&points, &seq_needles, &mut rng);
-    bench_ball_tree::<9>(&points, &seq_needles, &mut rng);
-    bench_ball_tree::<10>(&points, &seq_needles, &mut rng);
+    bench_ball_tree::<16>(&points, &seq_needles, &mut rng);
+    bench_ball_tree::<32>(&points, &seq_needles, &mut rng);
+
     let tic = Instant::now();
     for needle in &simd_needles {
         black_box(kdt.might_collide_simd::<L>(needle, Simd::splat(0.0001)));

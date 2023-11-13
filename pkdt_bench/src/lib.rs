@@ -72,6 +72,52 @@ where
     (seq_needles, simd_needles)
 }
 
+/// Generate some randomized numbers for us to benchmark against which are correlated within a SIMD
+/// batch.
+///
+/// # Generic parameters
+///
+/// - `D`: the dimension of the space
+/// - `L`: the number of SIMD lanes
+///
+/// # Returns
+///
+/// Returns a pair `(seq_needles, simd_needles)`, where `seq_needles` is correctly shaped for
+/// sequential querying and `simd_needles` is correctly shaped for SIMD querying.
+/// Additionally, each element of each element of `simd_needles` will be relatively close in space.
+pub fn make_correlated_needles<const D: usize, const L: usize>(
+    rng: &mut impl Rng,
+    n_trials: usize,
+) -> (Vec<[f32; D]>, Vec<[Simd<f32, L>; D]>)
+where
+    LaneCount<L>: SupportedLaneCount,
+{
+    let mut seq_needles = Vec::new();
+    let mut simd_needles = Vec::new();
+
+    for _ in 0..n_trials / L {
+        let mut start_pt = [0.0; D];
+        for v in start_pt.iter_mut() {
+            *v = rng.gen_range::<f32, _>(0.0..1.0);
+        }
+        let mut simd_pts = [Simd::splat(0.0); D];
+        for l in 0..L {
+            let mut seq_needle = [0.0; D];
+            for d in 0..D {
+                let value = start_pt[d] + rng.gen_range::<f32, _>(-0.02..0.02);
+                seq_needle[d] = value;
+                simd_pts[d].as_mut_array()[l] = value;
+            }
+            seq_needles.push(seq_needle);
+        }
+        simd_needles.push(simd_pts);
+    }
+
+    assert_eq!(seq_needles.len(), simd_needles.len() * L);
+
+    (seq_needles, simd_needles)
+}
+
 /// Load a pointcloud as a vector of 3-d float arrays from a HDF5 file located at `pointcloud_path`.
 pub fn load_pointcloud(pointcloud_path: impl AsRef<Path>) -> Result<Vec<[f32; 3]>> {
     let file = File::open(pointcloud_path)?;
