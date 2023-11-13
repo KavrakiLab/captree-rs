@@ -147,6 +147,48 @@ impl<const D: usize, const LW: usize> BallTree<D, LW> {
         }
     }
 
+    /// Estimate whether the ball centered at `needle` with radius `radius` collides with one of the
+    /// points in this tree.
+    /// This will be a liberal estimate; i.e. this may return `false` when a point is actually in
+    /// collision.
+    pub fn forward_only_collides(&self, needle: [f32; D], radius: f32) -> bool {
+        distsq(self.balls[0].center, needle) <= (radius + self.balls[0].radius).powi(2)
+            && self.forward_only_collides_help(0, needle, radius)
+    }
+
+    fn forward_only_collides_help(&self, test_idx: usize, needle: [f32; D], radius: f32) -> bool {
+        let left_child_idx = 2 * test_idx + 1;
+        let right_child_idx = left_child_idx + 1;
+
+        if test_idx >= self.leaf_start || self.balls[test_idx].center[0].is_infinite() {
+            return self.points[(test_idx - self.leaf_start) * LW..][..LW]
+                .iter()
+                .any(|&p| distsq(p, needle) < radius.powi(2));
+        }
+
+        // first, figure out the level of collision overlap in each child
+        let left_ball = self.balls[left_child_idx];
+        let right_ball = self.balls[right_child_idx];
+        let left_overlap = (radius + left_ball.radius).powi(2) - distsq(needle, left_ball.center);
+        let right_overlap =
+            (radius + right_ball.radius).powi(2) - distsq(needle, right_ball.center);
+
+        if left_overlap > 0.0 && right_overlap > 0.0 {
+            // choose subtree with greatest overlap to maximize chance of collision
+            if left_overlap < right_overlap {
+                self.collides_help(right_child_idx, needle, radius)
+            } else {
+                self.collides_help(left_child_idx, needle, radius)
+            }
+        } else if left_overlap > 0.0 {
+            self.collides_help(left_child_idx, needle, radius)
+        } else if right_overlap > 0.0 {
+            self.collides_help(right_child_idx, needle, radius)
+        } else {
+            false
+        }
+    }
+
     #[must_use]
     /// Test to verify that this ball tree is valid.
     pub fn is_valid(&self) -> bool {
@@ -431,11 +473,18 @@ mod tests {
         let n = 16;
         let mut rng = rand::thread_rng();
 
-        let points = (0..n).map(|_| [rng.gen_range(0.0..1.0), rng.gen_range(0.0..1.0), rng.gen_range(0.0..1.0)]).collect::<Vec<_>>();
+        let points = (0..n)
+            .map(|_| {
+                [
+                    rng.gen_range(0.0..1.0),
+                    rng.gen_range(0.0..1.0),
+                    rng.gen_range(0.0..1.0),
+                ]
+            })
+            .collect::<Vec<_>>();
         let tree = BallTree::<3, 2>::new3(&points, &mut rng);
         println!("{tree:?}");
         println!("{:?}", points[0]);
         assert!(tree.is_valid());
     }
-
 }

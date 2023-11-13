@@ -13,7 +13,7 @@ const L: usize = 16;
 fn main() {
     let points = get_points(N);
     let mut rng = ChaCha20Rng::seed_from_u64(2707);
-    let n_trials = 1 << 20;
+    let n_trials = 1 << 16;
 
     println!("{} points", points.len());
     println!("generating PKDT...");
@@ -138,7 +138,6 @@ fn bench_forest<const T: usize>(
 
 fn bench_ball_tree<const LW: usize>(points: &[[f32; 3]], needles: &[[f32; 3]], rng: &mut impl Rng) {
     let tree = BallTree::<3, LW>::new3(points, rng);
-
     let tic = Instant::now();
     for &needle in needles {
         black_box(tree.collides(needle, 0.01f32));
@@ -146,6 +145,17 @@ fn bench_ball_tree<const LW: usize>(points: &[[f32; 3]], needles: &[[f32; 3]], r
     let toc = Instant::now();
     println!(
         "completed ball tree (LW={LW}) in {:?} ({:?}/q)",
+        toc - tic,
+        (toc - tic) / needles.len() as u32,
+    );
+
+    let tic = Instant::now();
+    for &needle in needles {
+        black_box(tree.forward_only_collides(needle, 0.01f32));
+    }
+    let toc = Instant::now();
+    println!(
+        "completed ball tree (forward only, LW={LW}) in {:?} ({:?}/q)",
         toc - tic,
         (toc - tic) / needles.len() as u32,
     );
