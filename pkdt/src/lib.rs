@@ -72,13 +72,13 @@ impl<const D: usize> PkdTree<D> {
         let mut tests = vec![f32::INFINITY; n2 - 1].into_boxed_slice();
 
         // hack: just pad with infinity to make it a power of 2
-        let mut new_points = vec![[f32::INFINITY; D]; n2];
+        let mut new_points = vec![[f32::INFINITY; D]; n2].into_boxed_slice();
         new_points[..points.len()].copy_from_slice(points);
         recur_sort_points(new_points.as_mut(), tests.as_mut(), 0, 0);
 
         PkdTree {
             tests,
-            points: new_points.into(),
+            points: new_points,
         }
     }
 
@@ -274,7 +274,7 @@ fn median_partition<const D: usize>(points: &mut [[f32; D]], d: usize, rng: &mut
     ret
 }
 
-/// Partition `points[left..=right]` about the value at index `pivot_idx` on dimension `d`.
+/// Partition `points[left..right]` about the value at index `pivot_idx` on dimension `d`.
 /// Returns the resultant index of the pivot in the array.
 unsafe fn partition<const D: usize>(
     points: &mut [[f32; D]],
@@ -284,15 +284,15 @@ unsafe fn partition<const D: usize>(
     d: usize,
 ) -> usize {
     let pivot_value = points[pivot_idx][d];
-    points.swap(pivot_idx, right);
+    points.swap(pivot_idx, right - 1);
     let mut store_idx = left;
-    for i in left..=right {
+    for i in left..right - 1 {
         if *points.get_unchecked(i).get_unchecked(d) < pivot_value {
             points.swap_unchecked(store_idx, i);
             store_idx += 1;
         }
     }
-    points.swap(right, store_idx);
+    points.swap(right - 1, store_idx);
     store_idx
 }
 
@@ -308,21 +308,21 @@ fn quick_median<const D: usize>(points: &mut [[f32; D]], d: usize, rng: &mut imp
         k: usize,
     ) -> f32 {
         loop {
-            if left == right - 1 {
+            if left >= right - 1 {
                 return points[left][d];
             }
 
             let pivot_idx =
-                unsafe { partition(points, left, right, rng.gen_range(left..=right), d) };
+                unsafe { partition(points, left, right, rng.gen_range(left..right), d) };
             match k.cmp(&pivot_idx) {
                 Ordering::Equal => return points[k][d],
-                Ordering::Less => right = pivot_idx - 1,
+                Ordering::Less => right = pivot_idx,
                 Ordering::Greater => left = pivot_idx + 1,
             };
         }
     }
 
-    select(points, d, rng, 0, points.len() - 1, points.len() / 2)
+    select(points, d, rng, 0, points.len(), points.len() / 2)
 }
 
 fn bb_distsq<const D: usize>(point: [f32; D], bb: &[[f32; 2]; D]) -> f32 {

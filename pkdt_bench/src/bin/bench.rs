@@ -5,15 +5,16 @@ use std::{hint::black_box, simd::Simd, time::Instant};
 use kiddo::SquaredEuclidean;
 use pkdt::{BallTree, PkdForest};
 use pkdt_bench::{get_points, make_needles};
-use rand::{Rng, SeedableRng};
+use rand::{seq::SliceRandom, Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 
-const N: usize = 1 << 12;
+const N: usize = 1 << 20;
 const L: usize = 16;
 
 fn main() {
-    let points = get_points(N);
+    let mut points = get_points(N);
     let mut rng = ChaCha20Rng::seed_from_u64(2707);
+    points.shuffle(&mut rng);
     let n_trials = 1 << 20;
 
     println!("{} points", points.len());
