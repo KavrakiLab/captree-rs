@@ -24,10 +24,7 @@ fn main() {
 
     println!("generating competitor's KDT");
     let tic = Instant::now();
-    let mut kiddo_kdt = kiddo::KdTree::new();
-    for pt in points.iter() {
-        kiddo_kdt.add(pt, 0);
-    }
+    let kiddo_kdt = kiddo::ImmutableKdTree::new_from_slice(&points);
     println!(
         "generated kiddo tree in {:?}",
         Instant::now().duration_since(tic)
@@ -42,7 +39,7 @@ fn main() {
 
     let tic = Instant::now();
     for needle in &seq_needles {
-        black_box(kiddo_kdt.nearest_one::<SquaredEuclidean>(needle));
+        black_box(kiddo_kdt.within_unsorted::<SquaredEuclidean>(needle, 0.01f32.powi(2)));
     }
     let toc = Instant::now();
     let kiddo_time = toc.duration_since(tic);
