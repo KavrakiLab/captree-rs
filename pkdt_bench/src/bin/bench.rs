@@ -84,12 +84,12 @@ fn main() {
     bench_forest::<9>(&points, &simd_needles, &mut rng);
     bench_forest::<10>(&points, &simd_needles, &mut rng);
 
-    bench_ball_tree::<1>(&points, &seq_needles, &mut rng);
-    bench_ball_tree::<2>(&points, &seq_needles, &mut rng);
-    bench_ball_tree::<4>(&points, &seq_needles, &mut rng);
-    bench_ball_tree::<8>(&points, &seq_needles, &mut rng);
-    bench_ball_tree::<16>(&points, &seq_needles, &mut rng);
-    bench_ball_tree::<32>(&points, &seq_needles, &mut rng);
+    // bench_ball_tree::<1>(&points, &seq_needles, &mut rng);
+    // bench_ball_tree::<2>(&points, &seq_needles, &mut rng);
+    // bench_ball_tree::<4>(&points, &seq_needles, &mut rng);
+    // bench_ball_tree::<8>(&points, &seq_needles, &mut rng);
+    // bench_ball_tree::<16>(&points, &seq_needles, &mut rng);
+    // bench_ball_tree::<32>(&points, &seq_needles, &mut rng);
 
     let tic = Instant::now();
     for needle in &simd_needles {

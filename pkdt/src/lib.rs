@@ -1,8 +1,9 @@
 #![feature(portable_simd)]
-#![feature(new_uninit)]
+#![feature(slice_swap_unchecked)]
 #![warn(clippy::pedantic)]
 
 use std::{
+    cmp::Ordering,
     hint::unreachable_unchecked,
     simd::{LaneCount, Mask, Simd, SimdConstPtr, SimdPartialOrd, SupportedLaneCount},
 };
@@ -12,6 +13,7 @@ mod forest;
 
 pub use ball::BallTree;
 pub use forest::PkdForest;
+use rand::{thread_rng, Rng};
 
 #[derive(Clone, Debug, PartialEq)]
 /// A power-of-two KD-tree.
@@ -55,11 +57,7 @@ impl<const D: usize> PkdTree<D> {
         ) {
             // TODO make this algorithm O(n log n) instead of O(n log^2 n)
             if points.len() > 1 {
-                points.sort_unstable_by(|a, b| a[d as usize].partial_cmp(&b[d as usize]).unwrap());
-                let median = (points[points.len() / 2 - 1][d as usize]
-                    + points[points.len() / 2][d as usize])
-                    / 2.0;
-                tests[i] = median;
+                tests[i] = median_partition(points, d as usize, &mut thread_rng());
                 let next_dim = (d + 1) % D as u8;
                 let (lhs, rhs) = points.split_at_mut(points.len() / 2);
                 recur_sort_points(lhs, tests, next_dim, 2 * i + 1);
@@ -262,6 +260,71 @@ impl<const D: usize> PkdTree<D> {
     }
 }
 
+/// Calculate the "true" median (halfway between two midpoints) and partition `points` about said
+/// median along axis `d`.
+fn median_partition<const D: usize>(points: &mut [[f32; D]], d: usize, rng: &mut impl Rng) -> f32 {
+    let median_hi = quick_median(points, d, rng);
+    let (median_lo_idx, median_lo) = points[..points.len() / 2]
+        .iter()
+        .enumerate()
+        .max_by(|(_, a), (_, b)| a[d].partial_cmp(&b[d]).unwrap())
+        .unwrap();
+    let ret = (median_lo[d] + median_hi) / 2.0;
+    points.swap(median_lo_idx, points.len() / 2 - 1);
+    ret
+}
+
+/// Partition `points[left..=right]` about the value at index `pivot_idx` on dimension `d`.
+/// Returns the resultant index of the pivot in the array.
+unsafe fn partition<const D: usize>(
+    points: &mut [[f32; D]],
+    left: usize,
+    right: usize,
+    pivot_idx: usize,
+    d: usize,
+) -> usize {
+    let pivot_value = points[pivot_idx][d];
+    points.swap(pivot_idx, right);
+    let mut store_idx = left;
+    for i in left..=right {
+        if *points.get_unchecked(i).get_unchecked(d) < pivot_value {
+            points.swap_unchecked(store_idx, i);
+            store_idx += 1;
+        }
+    }
+    points.swap(right, store_idx);
+    store_idx
+}
+
+/// Calculate the median of `points` by dimension `d` and partition `points` so that all points
+/// below the median come before it in the buffer.
+fn quick_median<const D: usize>(points: &mut [[f32; D]], d: usize, rng: &mut impl Rng) -> f32 {
+    fn select<const D: usize>(
+        points: &mut [[f32; D]],
+        d: usize,
+        rng: &mut impl Rng,
+        mut left: usize,
+        mut right: usize,
+        k: usize,
+    ) -> f32 {
+        loop {
+            if left == right - 1 {
+                return points[left][d];
+            }
+
+            let pivot_idx =
+                unsafe { partition(points, left, right, rng.gen_range(left..=right), d) };
+            match k.cmp(&pivot_idx) {
+                Ordering::Equal => return points[k][d],
+                Ordering::Less => right = pivot_idx - 1,
+                Ordering::Greater => left = pivot_idx + 1,
+            };
+        }
+    }
+
+    select(points, d, rng, 0, points.len() - 1, points.len() / 2)
+}
+
 fn bb_distsq<const D: usize>(point: [f32; D], bb: &[[f32; 2]; D]) -> f32 {
     point
         .into_iter()
@@ -289,6 +352,8 @@ fn distsq<const D: usize>(a: [f32; D], b: [f32; D]) -> f32 {
 
 #[cfg(test)]
 mod tests {
+    use rand::thread_rng;
+
     use super::*;
 
     #[test]
@@ -362,5 +427,32 @@ mod tests {
         assert_eq!(kdt.query1([2.5]), 1);
         assert_eq!(kdt.query1([3.5]), 2);
         assert_eq!(kdt.query1([4.5]), 2);
+    }
+
+    #[test]
+    fn medians() {
+        let points = vec![[1.0], [2.0], [1.5]];
+
+        let mut points1 = points.clone();
+        let median = quick_median(&mut points1, 0, &mut thread_rng());
+        println!("{points1:?}");
+        assert_eq!(median, 1.5);
+        assert_eq!(points1, vec![[1.0], [1.5], [2.0]]);
+    }
+
+    #[test]
+    fn does_it_partition() {
+        let points = vec![[1.0], [2.0], [1.5], [2.1], [-0.5]];
+
+        let mut points1 = points.clone();
+        let median = median_partition(&mut points1, 0, &mut thread_rng());
+        assert_eq!(median, 1.25);
+        for p0 in &points1[..points1.len() / 2] {
+            assert!(p0[0] <= median);
+        }
+
+        for p0 in &points1[points1.len() / 2..] {
+            assert!(p0[0] >= median);
+        }
     }
 }
