@@ -31,8 +31,14 @@ pub struct PkdTree<const D: usize> {
     ///
     /// The length of `tests` must be `N`, rounded up to the next power of 2, minus one.
     tests: Box<[f32]>,
-    /// The relevant points at the center of each volume divided by `tests`.
-    points: Box<[[f32; D]]>,
+    /// The relevant points which may collide with the outcome of some test.
+    points: Box<[Box<[[f32; D]]>]>,
+}
+
+/// A prismatic bounding volume.
+struct Volume<const D: usize> {
+    lower: [f32; D],
+    upper: [f32; D],
 }
 
 impl<const D: usize> PkdTree<D> {
@@ -51,6 +57,8 @@ impl<const D: usize> PkdTree<D> {
         /// Recursive helper function to sort the points for the KD tree and generate the tests.
         fn recur_sort_points<const D: usize>(
             points: &mut [[f32; D]],
+            collision_candidates: Vec<[f32; D]>,
+            volume: &mut Volume<D>,
             tests: &mut [f32],
             d: u8,
             i: usize,
@@ -257,6 +265,32 @@ impl<const D: usize> PkdTree<D> {
     #[allow(clippy::missing_panics_doc)]
     pub fn get_point(&self, id: usize) -> [f32; D] {
         self.points[id]
+    }
+}
+
+impl<const D: usize> Volume<D> {
+    pub fn distsq_to(&self, point: &[f32; D]) -> f32 {
+        let mut p2 = [0.0; D];
+
+        point
+            .into_iter()
+            .zip(self.lower)
+            .zip(self.upper)
+            .map(|((p, l), u)| clamp(*p, l, u))
+            .zip(p2.iter_mut())
+            .for_each(|(clamped, coord)| *coord = clamped);
+
+        distsq(p2, *point)
+    }
+}
+
+fn clamp(x: f32, min: f32, max: f32) -> f32 {
+    if x < min {
+        min
+    } else if x > max {
+        max
+    } else {
+        x
     }
 }
 
