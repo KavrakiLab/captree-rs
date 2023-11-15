@@ -48,19 +48,14 @@ impl<const D: usize> PkdTree<D> {
     /// TODO: do all our sorting on the allocation that we return?
     pub fn new(points: &[[f32; D]]) -> Self {
         /// Recursive helper function to sort the points for the KD tree and generate the tests.
-        fn recur_sort_points<const D: usize>(
-            points: &mut [[f32; D]],
-            tests: &mut [f32],
-            d: u8,
-            i: usize,
-        ) {
-            // TODO make this algorithm O(n log n) instead of O(n log^2 n)
+        /// Runs in O(n log n)
+        fn build_tree<const D: usize>(points: &mut [[f32; D]], tests: &mut [f32], d: u8, i: usize) {
             if points.len() > 1 {
                 tests[i] = median_partition(points, d as usize, &mut thread_rng());
                 let next_dim = (d + 1) % D as u8;
                 let (lhs, rhs) = points.split_at_mut(points.len() / 2);
-                recur_sort_points(lhs, tests, next_dim, 2 * i + 1);
-                recur_sort_points(rhs, tests, next_dim, 2 * i + 2);
+                build_tree(lhs, tests, next_dim, 2 * i + 1);
+                build_tree(rhs, tests, next_dim, 2 * i + 2);
             }
         }
 
@@ -73,7 +68,7 @@ impl<const D: usize> PkdTree<D> {
         // hack: just pad with infinity to make it a power of 2
         let mut new_points = vec![[f32::INFINITY; D]; n2].into_boxed_slice();
         new_points[..points.len()].copy_from_slice(points);
-        recur_sort_points(new_points.as_mut(), tests.as_mut(), 0, 0);
+        build_tree(new_points.as_mut(), tests.as_mut(), 0, 0);
 
         PkdTree {
             tests,
