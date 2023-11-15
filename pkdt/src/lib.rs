@@ -102,7 +102,7 @@ impl<const D: usize> PkdTree<D> {
         }
 
         // Advance the tests forward
-        for i in 0..n2.ilog2() as usize {
+        for i in 0..n2.trailing_zeros() as usize {
             let test_ptrs = Simd::splat((self.tests.as_ref() as *const [f32]).cast::<f32>())
                 .wrapping_add(test_idxs);
             let relevant_tests: Simd<f32, L> = unsafe { Simd::gather_ptr(test_ptrs) };
@@ -124,7 +124,7 @@ impl<const D: usize> PkdTree<D> {
         assert!(n2.is_power_of_two());
 
         let mut test_idx = 0;
-        for i in 0..n2.ilog2() as usize {
+        for i in 0..n2.trailing_zeros() as usize {
             // println!("current idx: {test_idx}");
             let add = if needle[i % D] < (self.tests[test_idx]) {
                 1

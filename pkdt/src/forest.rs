@@ -149,7 +149,7 @@ impl<const D: usize> RandomizedTree<D> {
 
         let mut test_idx = 0;
         let mut state = self.seed;
-        for _ in 0..n2.ilog2() as usize {
+        for _ in 0..n2.trailing_zeros() as usize {
             // println!("current idx: {test_idx}");
             let d = state as usize % D;
             let add = if needle[d] < (self.tests[test_idx]) {
@@ -187,7 +187,7 @@ impl<const D: usize> RandomizedTree<D> {
         }
 
         // Advance the tests forward
-        for _ in 0..n2.ilog2() as usize {
+        for _ in 0..n2.trailing_zeros() as usize {
             let relevant_tests: Simd<f32, L> = unsafe {
                 Simd::gather_select_unchecked(&self.tests, mask, test_idxs, Simd::splat(f32::NAN))
             };
