@@ -3,7 +3,6 @@
 #![warn(clippy::pedantic)]
 
 use std::{
-    cmp::Ordering,
     hint::unreachable_unchecked,
     simd::{LaneCount, Mask, Simd, SimdConstPtr, SimdPartialOrd, SupportedLaneCount},
 };
@@ -110,7 +109,7 @@ impl<const D: usize> PkdTree<D> {
         }
 
         // Advance the tests forward
-        for i in 0..n2.ilog2() as usize {
+        for i in 0..n2.trailing_zeros() as usize {
             let test_ptrs = Simd::splat((self.tests.as_ref() as *const [f32]).cast::<f32>())
                 .wrapping_add(test_idxs);
             let relevant_tests: Simd<f32, L> = unsafe { Simd::gather_ptr(test_ptrs) };
@@ -132,7 +131,7 @@ impl<const D: usize> PkdTree<D> {
         assert!(n2.is_power_of_two());
 
         let mut test_idx = 0;
-        for i in 0..n2.ilog2() as usize {
+        for i in 0..n2.trailing_zeros() as usize {
             // println!("current idx: {test_idx}");
             let add = if needle[i % D] < (self.tests[test_idx]) {
                 1
@@ -317,46 +316,52 @@ unsafe fn partition<const D: usize>(
     pivot_idx: usize,
     d: usize,
 ) -> usize {
-    let pivot_value = points[pivot_idx][d];
-    points.swap(pivot_idx, right - 1);
-    let mut store_idx = left;
-    for i in left..right - 1 {
-        if *points.get_unchecked(i).get_unchecked(d) < pivot_value {
-            points.swap_unchecked(store_idx, i);
-            store_idx += 1;
+    let pivot_val = points[pivot_idx][d];
+    let mut i = left.overflowing_sub(1).0;
+    let mut j = right;
+    loop {
+        i = i.overflowing_add(1).0;
+        while *points.get_unchecked(i).get_unchecked(d) < pivot_val {
+            i += 1;
+        }
+        j -= 1;
+        while *points.get_unchecked(j).get_unchecked(d) > pivot_val {
+            j -= 1;
+        }
+
+        if i < j {
+            points.swap_unchecked(i, j);
+        } else {
+            return j + 1;
         }
     }
-    points.swap(right - 1, store_idx);
-    store_idx
 }
 
 /// Calculate the median of `points` by dimension `d` and partition `points` so that all points
 /// below the median come before it in the buffer.
 fn quick_median<const D: usize>(points: &mut [[f32; D]], d: usize, rng: &mut impl Rng) -> f32 {
-    fn select<const D: usize>(
-        points: &mut [[f32; D]],
-        d: usize,
-        rng: &mut impl Rng,
-        mut left: usize,
-        mut right: usize,
-        k: usize,
-    ) -> f32 {
-        loop {
-            if left >= right - 1 {
-                return points[left][d];
-            }
+    let k = points.len() / 2;
+    let mut left = 0;
+    let mut right = points.len();
 
-            let pivot_idx =
-                unsafe { partition(points, left, right, rng.gen_range(left..right), d) };
-            match k.cmp(&pivot_idx) {
-                Ordering::Equal => return points[k][d],
-                Ordering::Less => right = pivot_idx,
-                Ordering::Greater => left = pivot_idx + 1,
-            };
+    loop {
+        if right - left < 2 {
+            return points[left][d];
+        }
+
+        // index of the first element greater than or equal to the pivot
+        let pivot_idx = unsafe { partition(points, left, right, rng.gen_range(left..right), d) };
+        // match k.cmp(&pivot_idx) {
+        //     Ordering::Equal => return points[k][d],
+        //     Ordering::Less => right = pivot_idx,
+        //     Ordering::Greater => left = pivot_idx + 1,
+        // };
+        if k < pivot_idx {
+            right = pivot_idx;
+        } else {
+            left = pivot_idx;
         }
     }
-
-    select(points, d, rng, 0, points.len(), points.len() / 2)
 }
 
 fn bb_distsq<const D: usize>(point: [f32; D], bb: &[[f32; 2]; D]) -> f32 {
@@ -464,6 +469,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::float_cmp)]
     fn medians() {
         let points = vec![[1.0], [2.0], [1.5]];
 
@@ -475,6 +481,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::float_cmp)]
     fn does_it_partition() {
         let points = vec![[1.0], [2.0], [1.5], [2.1], [-0.5]];
 
@@ -488,5 +495,15 @@ mod tests {
         for p0 in &points1[points1.len() / 2..] {
             assert!(p0[0] >= median);
         }
+    }
+
+    #[test]
+    #[allow(clippy::float_cmp)]
+    fn just_test_partition() {
+        let mut points = vec![[1.5], [2.0], [1.0]];
+        let pivot_idx = unsafe { partition(&mut points, 0, 3, 1, 0) };
+        assert_eq!(pivot_idx, 2);
+        assert_eq!(points[2], [2.0]);
+        println!("{points:?}");
     }
 }
