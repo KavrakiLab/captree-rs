@@ -43,6 +43,7 @@ struct Volume<const D: usize> {
 
 impl<const D: usize> AffordanceTree<D> {
     #[must_use]
+    #[allow(clippy::too_many_lines)]
     #[allow(clippy::cast_possible_truncation)]
     /// Construct a new `PkdTree` containing all the points in `points`.
     /// For performance, this function changes the ordering of `points`, but does not affect the
@@ -94,8 +95,14 @@ impl<const D: usize> AffordanceTree<D> {
                 let (low_vol, hi_vol) = volume.split(tests[i], d as usize);
                 let mut lo_afford = possible_collisions.clone();
                 let mut hi_afford = possible_collisions;
-                lo_afford.retain(|pt| low_vol.distsq_to(pt) < rsq_range.1);
-                hi_afford.retain(|pt| hi_vol.distsq_to(pt) < rsq_range.1);
+                lo_afford.retain(|pt| {
+                    rsq_range.0 < low_vol.furthest_distsq_to(pt)
+                        && low_vol.distsq_to(pt) < rsq_range.1
+                });
+                hi_afford.retain(|pt| {
+                    rsq_range.0 < hi_vol.furthest_distsq_to(pt)
+                        && hi_vol.distsq_to(pt) < rsq_range.1
+                });
                 build_tree(
                     lhs,
                     tests,

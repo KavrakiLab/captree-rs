@@ -34,7 +34,14 @@ fn main() {
     println!("forward tree memory: {:?}B", kdt.memory_used());
 
     let tic = Instant::now();
-    let aff_tree = AffordanceTree::new(&points, (0.0f32.powi(2), 0.02f32.powi(2)), &mut rng);
+    let aff_tree = AffordanceTree::new(
+        &points,
+        (
+            0.01f32.powi(2) - f32::EPSILON,
+            0.01f32.powi(2) + f32::EPSILON,
+        ),
+        &mut rng,
+    );
     let toc = Instant::now();
     println!("constructed affordance tree in {:?}", toc - tic);
     println!("affordance tree memory: {:?}B", aff_tree.memory_used());
