@@ -254,10 +254,10 @@ impl<const D: usize> AffordanceTree<D> {
                 let vals = unsafe { Simd::gather_select_ptr(aff_ptrs, inbounds, *center_set) };
                 let diffs = center_set - vals;
                 dists_sq += diffs * diffs;
-                if dists_sq.simd_lt(radii_squared).any() {
-                    return true;
-                }
                 aff_ptrs = aff_ptrs.wrapping_add(Simd::splat(1));
+            }
+            if dists_sq.simd_lt(radii_squared).any() {
+                return true;
             }
 
             inbounds &= aff_ptrs.simd_lt(end_ptrs);
