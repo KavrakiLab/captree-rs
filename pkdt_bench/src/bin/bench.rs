@@ -114,7 +114,11 @@ fn main() {
         (100.0 * (kiddo_time.as_secs_f64() / simd_time.as_secs_f64() - 1.0)) as u64
     );
 
+    let tic = Instant::now();
     let aff_tree = AffordanceTree::new(&points, (0.0f32.powi(2), 0.02f32.powi(2)), &mut rng);
+    let toc = Instant::now();
+    println!("constructed affordance tree in {:?}", toc - tic);
+
     let tic = Instant::now();
     for needle in &seq_needles {
         black_box(aff_tree.collides(needle, 0.0001));
@@ -126,6 +130,22 @@ fn main() {
         aff_time,
         aff_time / seq_needles.len() as u32
     );
+
+    let tic = Instant::now();
+    for simd_needle in &simd_needles {
+        black_box(aff_tree.collides_simd(simd_needle, Simd::splat(0.0001)));
+    }
+    let toc = Instant::now();
+    let aff_time = toc - tic;
+    println!(
+        "completed SIMD queries for affordance trees in {:?} ({:?}/pt, {:?}/q)",
+        aff_time,
+        aff_time / seq_needles.len() as u32,
+        aff_time / simd_needles.len() as u32
+    );
+
+    println!("forward tree memory: {:?}B", kdt.memory_used());
+    println!("affordance tree memory: {:?}B", aff_tree.memory_used());
 }
 
 fn bench_forest<const T: usize>(

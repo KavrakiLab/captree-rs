@@ -4,6 +4,7 @@
 
 use std::{
     hint::unreachable_unchecked,
+    mem::size_of,
     simd::{LaneCount, Mask, Simd, SimdConstPtr, SimdPartialOrd, SupportedLaneCount},
 };
 
@@ -253,6 +254,13 @@ impl<const D: usize> PkdTree<D> {
     #[allow(clippy::missing_panics_doc)]
     pub fn get_point(&self, id: usize) -> [f32; D] {
         self.points[id]
+    }
+
+    #[must_use]
+    /// Return the total memory used (stack + heap) by this structure.
+    pub fn memory_used(&self) -> usize {
+        size_of::<AffordanceTree<D>>()
+            + (self.points.len() * D + self.tests.len()) * size_of::<f32>()
     }
 }
 
