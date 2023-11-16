@@ -31,6 +31,15 @@ fn main() {
         Instant::now().duration_since(tic)
     );
 
+    println!("forward tree memory: {:?}B", kdt.memory_used());
+
+    let tic = Instant::now();
+    let aff_tree = AffordanceTree::new(&points, (0.0f32.powi(2), 0.02f32.powi(2)), &mut rng);
+    let toc = Instant::now();
+    println!("constructed affordance tree in {:?}", toc - tic);
+    println!("affordance tree memory: {:?}B", aff_tree.memory_used());
+    println!("affordance size: {}", aff_tree.affordance_size());
+
     println!("testing for performance...");
 
     let (seq_needles, simd_needles) = make_needles(&mut rng, n_trials);
@@ -115,11 +124,6 @@ fn main() {
     );
 
     let tic = Instant::now();
-    let aff_tree = AffordanceTree::new(&points, (0.0f32.powi(2), 0.02f32.powi(2)), &mut rng);
-    let toc = Instant::now();
-    println!("constructed affordance tree in {:?}", toc - tic);
-
-    let tic = Instant::now();
     for needle in &seq_needles {
         black_box(aff_tree.collides(needle, 0.0001));
     }
@@ -143,9 +147,6 @@ fn main() {
         aff_time / seq_needles.len() as u32,
         aff_time / simd_needles.len() as u32
     );
-
-    println!("forward tree memory: {:?}B", kdt.memory_used());
-    println!("affordance tree memory: {:?}B", aff_tree.memory_used());
 }
 
 fn bench_forest<const T: usize>(

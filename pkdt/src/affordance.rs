@@ -253,6 +253,12 @@ impl<const D: usize> AffordanceTree<D> {
         size_of::<AffordanceTree<D>>()
             + (self.points.len() * D + self.tests.len()) * size_of::<f32>()
     }
+
+    #[must_use]
+    /// Get the number of affordances per point.
+    pub fn affordance_size(&self) -> usize {
+        self.affordance_size
+    }
 }
 
 impl<const D: usize> Volume<D> {
