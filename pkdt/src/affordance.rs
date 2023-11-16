@@ -282,18 +282,16 @@ impl<const D: usize> AffordanceTree<D> {
 }
 
 impl<const D: usize> Volume<D> {
+    #[allow(clippy::needless_range_loop)]
     pub fn distsq_to(&self, point: &[f32; D]) -> f32 {
-        let mut p2 = [0.0; D];
+        let mut dist = 0.0;
 
-        point
-            .iter()
-            .zip(self.lower)
-            .zip(self.upper)
-            .map(|((p, l), u)| clamp(*p, l, u))
-            .zip(p2.iter_mut())
-            .for_each(|(clamped, coord)| *coord = clamped);
+        for d in 0..D {
+            let clamped = clamp(point[d], self.lower[d], self.upper[d]);
+            dist += (point[d] - clamped).powi(2);
+        }
 
-        distsq(p2, *point)
+        dist
     }
 
     #[allow(clippy::needless_range_loop)]
