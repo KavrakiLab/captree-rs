@@ -27,8 +27,9 @@ pub struct AffordanceTree<const D: usize> {
     tests: Box<[f32]>,
     /// The range of radii which are legal for queries on this tree.
     rsq_range: (f32, f32),
-    /// The size of each individual affordance buffer in `points`.
-    affordance_size: usize,
+    /// Indexes for the starts of the affordance buffer subsequence of `points` corresponding to
+    /// each leaf cell in the tree.
+    aff_starts: Box<[usize]>,
     /// The relevant points which may collide with the outcome of some test.
     /// The affordance buffer for a point of index `i`
     points: Box<[[f32; D]]>,
@@ -66,7 +67,8 @@ impl<const D: usize> AffordanceTree<D> {
             i: usize,
             mut possible_collisions: Vec<[f32; D]>,
             volume: Volume<D>,
-            affordances: &mut Vec<Vec<[f32; D]>>,
+            ranges: &mut Vec<usize>,
+            affordances: &mut Vec<[f32; D]>,
             rsq_range: (f32, f32),
             rng: &mut impl Rng,
         ) {
@@ -87,7 +89,8 @@ impl<const D: usize> AffordanceTree<D> {
                 possible_collisions.push(cell_center);
                 let l = possible_collisions.len();
                 possible_collisions.swap(0, l - 1); // put the center at the front
-                affordances.push(possible_collisions);
+                ranges.push(affordances.len());
+                affordances.extend(possible_collisions);
             } else {
                 tests[i] = median_partition(points, d as usize, rng);
                 let next_dim = (d + 1) % D as u8;
@@ -110,6 +113,7 @@ impl<const D: usize> AffordanceTree<D> {
                     2 * i + 1,
                     lo_afford,
                     low_vol,
+                    ranges,
                     affordances,
                     rsq_range,
                     rng,
@@ -121,6 +125,7 @@ impl<const D: usize> AffordanceTree<D> {
                     2 * i + 2,
                     hi_afford,
                     hi_vol,
+                    ranges,
                     affordances,
                     rsq_range,
                     rng,
@@ -137,8 +142,9 @@ impl<const D: usize> AffordanceTree<D> {
         // hack: just pad with infinity to make it a power of 2
         let mut new_points = vec![[f32::INFINITY; D]; n2].into_boxed_slice();
         new_points[..points.len()].copy_from_slice(points);
-        let mut affordance_vec = Vec::with_capacity(n2);
+        let mut points = Vec::with_capacity(n2);
         let possible_collisions = new_points.clone().to_vec();
+        let mut ranges = Vec::new();
         build_tree(
             new_points.as_mut(),
             tests.as_mut(),
@@ -149,22 +155,18 @@ impl<const D: usize> AffordanceTree<D> {
                 lower: [-f32::INFINITY; D],
                 upper: [f32::INFINITY; D],
             },
-            &mut affordance_vec,
+            &mut ranges,
+            &mut points,
             rsq_range,
             rng,
         );
-
-        let affordance_size = affordance_vec.iter().map(Vec::len).max().unwrap();
-        let mut points = vec![[f32::INFINITY; D]; affordance_size * n2].into_boxed_slice();
-        for (i, v) in affordance_vec.into_iter().enumerate() {
-            points[i * affordance_size..][..v.len()].copy_from_slice(&v);
-        }
+        ranges.push(points.len());
 
         AffordanceTree {
             tests,
             rsq_range,
-            affordance_size,
-            points,
+            aff_starts: ranges.into_boxed_slice(),
+            points: points.into_boxed_slice(),
         }
     }
 
@@ -195,9 +197,10 @@ impl<const D: usize> AffordanceTree<D> {
             test_idx += add;
         }
 
-        let buf_idx = (test_idx - self.tests.len()) * self.affordance_size;
+        let i = test_idx - self.tests.len();
+        let range = self.aff_starts[i]..self.aff_starts[i + 1];
 
-        self.points[buf_idx..][..self.affordance_size]
+        self.points[range]
             .iter()
             .any(|pt| distsq(*pt, *center) <= r_squared)
     }
@@ -234,21 +237,30 @@ impl<const D: usize> AffordanceTree<D> {
             test_idxs += cmp_results.select(Simd::splat(1), Simd::splat(2));
         }
 
-        let point_idxs =
-            (test_idxs - Simd::splat(self.tests.len())) * Simd::splat(self.affordance_size);
-        let ptrs = Simd::splat((self.points.as_ref() as *const [[f32; D]]).cast::<f32>())
-            .wrapping_add(point_idxs);
+        let start_ptrs = Simd::splat((self.aff_starts.as_ref() as *const [usize]).cast::<usize>())
+            .wrapping_add(test_idxs)
+            .wrapping_sub(Simd::splat(self.tests.len()));
+        let starts = unsafe { Simd::gather_ptr(start_ptrs) } * Simd::splat(D);
+        let ends =
+            unsafe { Simd::gather_ptr(start_ptrs.wrapping_add(Simd::splat(1))) } * Simd::splat(D);
 
-        for _ in 0..self.affordance_size {
+        let points_base = Simd::splat((self.points.as_ref() as *const [[f32; D]]).cast::<f32>());
+        let mut aff_ptrs = points_base.wrapping_add(starts);
+        let end_ptrs = points_base.wrapping_add(ends);
+        let mut inbounds = Mask::from_int(Simd::splat(-1));
+        while inbounds.any() {
             let mut dists_sq = Simd::splat(0.0);
-            for center_d in centers {
-                let cell_vals = unsafe { Simd::gather_ptr(ptrs) };
-                let diffs = cell_vals - center_d;
+            for center_set in centers {
+                let vals = unsafe { Simd::gather_select_ptr(aff_ptrs, inbounds, *center_set) };
+                let diffs = center_set - vals;
                 dists_sq += diffs * diffs;
+                if dists_sq.simd_lt(radii_squared).any() {
+                    return true;
+                }
+                aff_ptrs = aff_ptrs.wrapping_add(Simd::splat(1));
             }
-            if dists_sq.simd_le(radii_squared).any() {
-                return true;
-            }
+
+            inbounds &= aff_ptrs.simd_lt(end_ptrs);
         }
 
         false
@@ -259,12 +271,13 @@ impl<const D: usize> AffordanceTree<D> {
     pub fn memory_used(&self) -> usize {
         size_of::<AffordanceTree<D>>()
             + (self.points.len() * D + self.tests.len()) * size_of::<f32>()
+            + self.aff_starts.len() * size_of::<usize>()
     }
 
     #[must_use]
-    /// Get the number of affordances per point.
+    /// Get the average number of affordances per point.
     pub fn affordance_size(&self) -> usize {
-        self.affordance_size
+        self.points.len() / (self.tests.len() + 1)
     }
 }
 
@@ -334,7 +347,7 @@ mod tests {
     fn build_simple() {
         let points = [[0.0, 0.1], [0.4, -0.2], [-0.2, -0.1]];
         let t = AffordanceTree::new(&points, (0.0, 0.04), &mut thread_rng());
-        assert_eq!(t.affordance_size, 2);
+        println!("{t:?}");
     }
 
     #[test]

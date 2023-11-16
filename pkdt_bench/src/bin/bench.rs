@@ -33,24 +33,12 @@ fn main() {
 
     println!("forward tree memory: {:?}B", kdt.memory_used());
 
-    let tic = Instant::now();
-    let aff_tree = AffordanceTree::new(
-        &points,
-        (
-            0.01f32.powi(2) - f32::EPSILON,
-            0.01f32.powi(2) + f32::EPSILON,
-        ),
-        &mut rng,
-    );
-    let toc = Instant::now();
-    println!("constructed affordance tree in {:?}", toc - tic);
-    println!("affordance tree memory: {:?}B", aff_tree.memory_used());
-    println!("affordance size: {}", aff_tree.affordance_size());
-
     println!("testing for performance...");
 
     let (seq_needles, simd_needles) = make_needles(&mut rng, n_trials);
     // let (seq_needles, simd_needles) = make_correlated_needles(&mut rng, n_trials);
+
+    bench_affordance(&points, &simd_needles, &seq_needles, &mut rng);
 
     println!("testing sequential...");
 
@@ -129,9 +117,30 @@ fn main() {
         "speedup: {}% vs kiddo",
         (100.0 * (kiddo_time.as_secs_f64() / simd_time.as_secs_f64() - 1.0)) as u64
     );
+}
+
+fn bench_affordance(
+    points: &[[f32; 3]],
+    simd_needles: &[[Simd<f32, L>; 3]],
+    seq_needles: &[[f32; 3]],
+    rng: &mut impl Rng,
+) {
+    let tic = Instant::now();
+    let aff_tree = AffordanceTree::new(
+        points,
+        (
+            0.01f32.powi(2) - f32::EPSILON,
+            0.01f32.powi(2) + f32::EPSILON,
+        ),
+        rng,
+    );
+    let toc = Instant::now();
+    println!("constructed affordance tree in {:?}", toc - tic);
+    println!("affordance tree memory: {:?}B", aff_tree.memory_used());
+    println!("affordance size: {}", aff_tree.affordance_size());
 
     let tic = Instant::now();
-    for needle in &seq_needles {
+    for needle in seq_needles {
         black_box(aff_tree.collides(needle, 0.0001));
     }
     let toc = Instant::now();
@@ -143,7 +152,7 @@ fn main() {
     );
 
     let tic = Instant::now();
-    for simd_needle in &simd_needles {
+    for simd_needle in simd_needles {
         black_box(aff_tree.collides_simd(simd_needle, Simd::splat(0.0001)));
     }
     let toc = Instant::now();
