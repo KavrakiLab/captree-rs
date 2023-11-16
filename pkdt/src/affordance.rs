@@ -80,7 +80,7 @@ impl<const D: usize> AffordanceTree<D> {
                     let closest_dist = distsq(*pt, closest);
                     cell_center != *pt
                         && closest_dist < rsq_max
-                        && closest_dist < center_dist
+                        && closest_dist < volume.furthest_distsq_to(&cell_center)
                         && rsq_min < center_dist
                 });
                 possible_collisions.push(cell_center);
@@ -274,6 +274,20 @@ impl<const D: usize> Volume<D> {
             .for_each(|(clamped, coord)| *coord = clamped);
 
         distsq(p2, *point)
+    }
+
+    #[allow(clippy::needless_range_loop)]
+    pub fn furthest_distsq_to(&self, point: &[f32; D]) -> f32 {
+        let mut dist = 0.0;
+
+        for d in 0..D {
+            let lo_diff = (self.lower[d] - point[d]).abs();
+            let hi_diff = (self.upper[d] - point[d]).abs();
+
+            dist += if lo_diff < hi_diff { hi_diff } else { lo_diff }.powi(2);
+        }
+
+        dist
     }
 
     pub fn split(mut self, test: f32, dim: usize) -> (Self, Self) {
