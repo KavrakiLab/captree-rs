@@ -3,7 +3,7 @@
 use std::{hint::black_box, simd::Simd, time::Instant};
 
 use kiddo::SquaredEuclidean;
-use pkdt::{BallTree, PkdForest};
+use pkdt::{AffordanceTree, BallTree, PkdForest};
 use pkdt_bench::{get_points, make_needles};
 use rand::{seq::SliceRandom, Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
@@ -112,7 +112,20 @@ fn main() {
     println!(
         "speedup: {}% vs kiddo",
         (100.0 * (kiddo_time.as_secs_f64() / simd_time.as_secs_f64() - 1.0)) as u64
-    )
+    );
+
+    let aff_tree = AffordanceTree::new(&points, (0.0f32.powi(2), 0.02f32.powi(2)), &mut rng);
+    let tic = Instant::now();
+    for needle in &seq_needles {
+        black_box(aff_tree.collides(needle, 0.0001));
+    }
+    let toc = Instant::now();
+    let aff_time = toc - tic;
+    println!(
+        "completed sequential queries for affordance trees in {:?} ({:?}/q)",
+        aff_time,
+        aff_time / seq_needles.len() as u32
+    );
 }
 
 fn bench_forest<const T: usize>(

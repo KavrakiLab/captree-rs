@@ -19,6 +19,8 @@ pub struct AffordanceTree<const D: usize> {
     ///
     /// The length of `tests` must be `N`, rounded up to the next power of 2, minus one.
     tests: Box<[f32]>,
+    /// The range of radii which are legal for queries on this tree.
+    rsq_range: (f32, f32),
     /// The size of each individual affordance buffer in `points`.
     affordance_size: usize,
     /// The relevant points which may collide with the outcome of some test.
@@ -45,7 +47,7 @@ impl<const D: usize> AffordanceTree<D> {
     /// This function will panic if `D` is greater than or equal to 255.
     ///
     /// TODO: do all our sorting on the allocation that we return?
-    pub fn new(points: &[[f32; D]], radius_range: (f32, f32), rng: &mut impl Rng) -> Self {
+    pub fn new(points: &[[f32; D]], rsq_range: (f32, f32), rng: &mut impl Rng) -> Self {
         #[allow(clippy::float_cmp)]
         #[allow(clippy::too_many_arguments)]
         /// Recursive helper function to sort the points for the KD tree and generate the tests.
@@ -135,7 +137,7 @@ impl<const D: usize> AffordanceTree<D> {
                 upper: [f32::INFINITY; D],
             },
             &mut affordance_vec,
-            (radius_range.0.powi(2), radius_range.1.powi(2)),
+            rsq_range,
             rng,
         );
 
@@ -147,9 +149,44 @@ impl<const D: usize> AffordanceTree<D> {
 
         AffordanceTree {
             tests,
+            rsq_range,
             affordance_size,
             points,
         }
+    }
+
+    #[must_use]
+    /// Determine whether a point in this tree collides with a ball with radius squared `r_squared`.
+    ///
+    /// # Panics
+    ///
+    /// This function will panic if `r_squared` is outside the range of squared radii passed to the
+    /// construction of the tree.
+    /// TODO: implement real error handling.
+    pub fn collides(&self, center: &[f32; D], r_squared: f32) -> bool {
+        assert!(self.rsq_range.0 <= r_squared);
+        assert!(r_squared <= self.rsq_range.1);
+
+        let n2 = self.tests.len() + 1;
+        assert!(n2.is_power_of_two());
+
+        let mut test_idx = 0;
+        for i in 0..n2.trailing_zeros() as usize {
+            // println!("current idx: {test_idx}");
+            let add = if center[i % D] < (self.tests[test_idx]) {
+                1
+            } else {
+                2
+            };
+            test_idx <<= 1;
+            test_idx += add;
+        }
+
+        let buf_idx = (test_idx - self.tests.len()) * self.affordance_size;
+
+        self.points[buf_idx..][..self.affordance_size]
+            .iter()
+            .any(|pt| distsq(*pt, *center) <= r_squared)
     }
 }
 
@@ -204,7 +241,16 @@ mod tests {
     #[test]
     fn build_simple() {
         let points = [[0.0, 0.1], [0.4, -0.2], [-0.2, -0.1]];
-        let t = AffordanceTree::new(&points, (0.001, 0.2), &mut thread_rng());
-        println!("{t:?}");
+        let t = AffordanceTree::new(&points, (0.0, 0.04), &mut thread_rng());
+        assert_eq!(t.affordance_size, 2);
+    }
+
+    #[test]
+    fn exact_query_single() {
+        let points = [[0.0, 0.1], [0.4, -0.2], [-0.2, -0.1]];
+        let t = AffordanceTree::new(&points, (0.0, 0.04), &mut thread_rng());
+
+        let q0 = [0.0, -0.01];
+        assert!(t.collides(&q0, (0.12f32).powi(2)));
     }
 }
