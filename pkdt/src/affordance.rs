@@ -26,9 +26,12 @@ pub struct AffordanceTree<const D: usize> {
     /// The length of `tests` must be `N`, rounded up to the next power of 2, minus one.
     tests: Box<[f32]>,
     /// The range of radii which are legal for queries on this tree.
+    /// The first element is the minimum and the second element is the maximum.
     rsq_range: (f32, f32),
     /// Indexes for the starts of the affordance buffer subsequence of `points` corresponding to
     /// each leaf cell in the tree.
+    /// This buffer is padded with one extra `usize` at the end with the maximum length of `points`
+    /// for the sake of branchless computation.
     aff_starts: Box<[usize]>,
     /// The relevant points which may collide with the outcome of some test.
     /// The affordance buffer for a point of index `i`
@@ -46,15 +49,18 @@ impl<const D: usize> AffordanceTree<D> {
     #[must_use]
     #[allow(clippy::too_many_lines)]
     #[allow(clippy::cast_possible_truncation)]
-    /// Construct a new `PkdTree` containing all the points in `points`.
-    /// For performance, this function changes the ordering of `points`, but does not affect the
-    /// set of points inside it.
+    /// Construct a new affordance tree containing all the points in `points`.
+    /// `rsq_range` is a `(minimum, maximum)` pair containing the lower and upper bound on the
+    /// radius of the balls which will be queried against the tree.
+    /// `rng` is a random number generator.
+    /// Although the results of the tree are deterministic after construction, the construction
+    /// process for the tree is probabilistic.
+    /// The output of construction will be the same independent of the RNG, but the process to
+    /// construct the tree may vary with the provided RNG.
     ///
     /// # Panics
     ///
     /// This function will panic if `D` is greater than or equal to 255.
-    ///
-    /// TODO: do all our sorting on the allocation that we return?
     pub fn new(points: &[[f32; D]], rsq_range: (f32, f32), rng: &mut impl Rng) -> Self {
         #[allow(clippy::float_cmp)]
         #[allow(clippy::too_many_arguments)]
@@ -73,18 +79,19 @@ impl<const D: usize> AffordanceTree<D> {
             rng: &mut impl Rng,
         ) {
             if points.len() <= 1 {
+                // Leaf case - filter out all the points which are needed in affordance and populate
+                // the buffer.
                 let cell_center = points[0];
 
-                let (rsq_min, rsq_max) = rsq_range;
-
+                let center_furthest_distsq = volume.furthest_distsq_to(&cell_center);
                 possible_collisions.retain(|pt| {
                     let closest = volume.closest_point(pt);
                     let center_dist = distsq(cell_center, closest);
                     let closest_dist = distsq(*pt, closest);
-                    cell_center != *pt
-                        && closest_dist < rsq_max
-                        && closest_dist < volume.furthest_distsq_to(&cell_center)
-                        && rsq_min < center_dist
+                    // check for contacting the volume is already covered
+                    cell_center != *pt // not a duplicate
+                        && closest_dist < center_furthest_distsq // not always covered by center contacts 
+                        && rsq_range.0 < center_dist // closer to the boundary then the center
                 });
                 possible_collisions.push(cell_center);
                 let l = possible_collisions.len();
@@ -92,12 +99,16 @@ impl<const D: usize> AffordanceTree<D> {
                 ranges.push(affordances.len());
                 affordances.extend(possible_collisions);
             } else {
+                // split the volume in half
                 tests[i] = median_partition(points, d as usize, rng);
                 let next_dim = (d + 1) % D as u8;
                 let (lhs, rhs) = points.split_at_mut(points.len() / 2);
                 let (low_vol, hi_vol) = volume.split(tests[i], d as usize);
                 let mut lo_afford = possible_collisions.clone();
                 let mut hi_afford = possible_collisions;
+
+                // retain only points which might be in the affordance buffer for the split-out
+                // cells
                 lo_afford.retain(|pt| {
                     rsq_range.0 < low_vol.furthest_distsq_to(pt)
                         && low_vol.distsq_to(pt) < rsq_range.1
@@ -179,12 +190,14 @@ impl<const D: usize> AffordanceTree<D> {
     /// construction of the tree.
     /// TODO: implement real error handling.
     pub fn collides(&self, center: &[f32; D], r_squared: f32) -> bool {
+        // ball mus be in the rsq range
         assert!(self.rsq_range.0 <= r_squared);
         assert!(r_squared <= self.rsq_range.1);
 
         let n2 = self.tests.len() + 1;
         assert!(n2.is_power_of_two());
 
+        // forward pass through the tree
         let mut test_idx = 0;
         for i in 0..n2.trailing_zeros() as usize {
             // println!("current idx: {test_idx}");
@@ -197,9 +210,11 @@ impl<const D: usize> AffordanceTree<D> {
             test_idx += add;
         }
 
+        // retrieve affordance buffer location
         let i = test_idx - self.tests.len();
         let range = self.aff_starts[i]..self.aff_starts[i + 1];
 
+        // check affordance buffer
         self.points[range]
             .iter()
             .any(|pt| distsq(*pt, *center) <= r_squared)
@@ -237,6 +252,7 @@ impl<const D: usize> AffordanceTree<D> {
             test_idxs += cmp_results.select(Simd::splat(1), Simd::splat(2));
         }
 
+        // retrieve start/end pointers for the affordance buffer
         let start_ptrs = Simd::splat((self.aff_starts.as_ref() as *const [usize]).cast::<usize>())
             .wrapping_add(test_idxs)
             .wrapping_sub(Simd::splat(self.tests.len()));
@@ -247,7 +263,9 @@ impl<const D: usize> AffordanceTree<D> {
         let points_base = Simd::splat((self.points.as_ref() as *const [[f32; D]]).cast::<f32>());
         let mut aff_ptrs = points_base.wrapping_add(starts);
         let end_ptrs = points_base.wrapping_add(ends);
-        let mut inbounds = Mask::from_int(Simd::splat(-1));
+
+        // scan through affordance buffer, searching for a collision
+        let mut inbounds = Mask::from_int(Simd::splat(-1)); // whether each of `aff_ptrs` is in a valid affordance buffer
         while inbounds.any() {
             let mut dists_sq = Simd::splat(0.0);
             for center_set in centers {
@@ -256,6 +274,8 @@ impl<const D: usize> AffordanceTree<D> {
                 dists_sq += diffs * diffs;
                 aff_ptrs = aff_ptrs.wrapping_add(Simd::splat(1));
             }
+
+            // is one ball in collision with a point?
             if dists_sq.simd_lt(radii_squared).any() {
                 return true;
             }
@@ -267,7 +287,7 @@ impl<const D: usize> AffordanceTree<D> {
     }
 
     #[must_use]
-    /// Return the total memory used (stack + heap) by this structure.
+    /// Get the total memory used (stack + heap) by this structure, measured in bytes.
     pub fn memory_used(&self) -> usize {
         size_of::<AffordanceTree<D>>()
             + (self.points.len() * D + self.tests.len()) * size_of::<f32>()
@@ -283,6 +303,7 @@ impl<const D: usize> AffordanceTree<D> {
 
 impl<const D: usize> Volume<D> {
     #[allow(clippy::needless_range_loop)]
+    /// Get the minimum distance squared from all points in this volume to a test point.
     pub fn distsq_to(&self, point: &[f32; D]) -> f32 {
         let mut dist = 0.0;
 
@@ -295,6 +316,7 @@ impl<const D: usize> Volume<D> {
     }
 
     #[allow(clippy::needless_range_loop)]
+    /// Get the furthest distance squared from all points in this volume to a test point.
     pub fn furthest_distsq_to(&self, point: &[f32; D]) -> f32 {
         let mut dist = 0.0;
 
@@ -308,6 +330,7 @@ impl<const D: usize> Volume<D> {
         dist
     }
 
+    /// Split this volume by a test plane with value `test` along `dim`.
     pub fn split(mut self, test: f32, dim: usize) -> (Self, Self) {
         let mut rhs = self;
         self.upper[dim] = test;
@@ -316,6 +339,7 @@ impl<const D: usize> Volume<D> {
         (self, rhs)
     }
 
+    /// Find the closest point in this volume to `query`.
     pub fn closest_point(&self, query: &[f32; D]) -> [f32; D] {
         let mut closest = [f32::NAN; D];
         for d in 0..D {
@@ -325,6 +349,7 @@ impl<const D: usize> Volume<D> {
     }
 }
 
+/// Clamp a floating-point number.
 fn clamp(x: f32, min: f32, max: f32) -> f32 {
     if x < min {
         min
