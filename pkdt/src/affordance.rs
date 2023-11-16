@@ -105,17 +105,18 @@ impl<const D: usize> AffordanceTree<D> {
                 let (lhs, rhs) = points.split_at_mut(points.len() / 2);
                 let (low_vol, hi_vol) = volume.split(tests[i], d as usize);
                 let mut lo_afford = possible_collisions.clone();
-                let mut hi_afford = possible_collisions;
+                let mut hi_afford = Vec::with_capacity(lo_afford.len());
 
                 // retain only points which might be in the affordance buffer for the split-out
                 // cells
                 lo_afford.retain(|pt| {
+                    if rsq_range.0 < hi_vol.furthest_distsq_to(pt)
+                        && hi_vol.distsq_to(pt) < rsq_range.1
+                    {
+                        hi_afford.push(*pt);
+                    }
                     rsq_range.0 < low_vol.furthest_distsq_to(pt)
                         && low_vol.distsq_to(pt) < rsq_range.1
-                });
-                hi_afford.retain(|pt| {
-                    rsq_range.0 < hi_vol.furthest_distsq_to(pt)
-                        && hi_vol.distsq_to(pt) < rsq_range.1
                 });
                 build_tree(
                     lhs,
@@ -155,7 +156,7 @@ impl<const D: usize> AffordanceTree<D> {
         new_points[..points.len()].copy_from_slice(points);
         let mut points = Vec::with_capacity(n2);
         let possible_collisions = new_points.clone().to_vec();
-        let mut ranges = Vec::new();
+        let mut ranges = Vec::with_capacity(n2 + 1);
         build_tree(
             new_points.as_mut(),
             tests.as_mut(),

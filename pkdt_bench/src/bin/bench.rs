@@ -54,17 +54,17 @@ fn main() {
         kiddo_time / seq_needles.len() as u32
     );
 
-    let tic = Instant::now();
-    for needle in &seq_needles {
-        black_box(kdt.query1_exact(*needle));
-    }
-    let toc = Instant::now();
-    let exact_time = toc.duration_since(tic);
-    println!(
-        "completed exact in {:?} ({:?}/q)",
-        exact_time,
-        exact_time / seq_needles.len() as u32
-    );
+    // let tic = Instant::now();
+    // for needle in &seq_needles {
+    //     black_box(kdt.query1_exact(*needle));
+    // }
+    // let toc = Instant::now();
+    // let exact_time = toc.duration_since(tic);
+    // println!(
+    //     "completed exact in {:?} ({:?}/q)",
+    //     exact_time,
+    //     exact_time / seq_needles.len() as u32
+    // );
 
     let tic = Instant::now();
     for &needle in &seq_needles {
@@ -83,11 +83,11 @@ fn main() {
     bench_forest::<3>(&points, &simd_needles, &mut rng);
     bench_forest::<4>(&points, &simd_needles, &mut rng);
     bench_forest::<5>(&points, &simd_needles, &mut rng);
-    bench_forest::<6>(&points, &simd_needles, &mut rng);
-    bench_forest::<7>(&points, &simd_needles, &mut rng);
-    bench_forest::<8>(&points, &simd_needles, &mut rng);
-    bench_forest::<9>(&points, &simd_needles, &mut rng);
-    bench_forest::<10>(&points, &simd_needles, &mut rng);
+    // bench_forest::<6>(&points, &simd_needles, &mut rng);
+    // bench_forest::<7>(&points, &simd_needles, &mut rng);
+    // bench_forest::<8>(&points, &simd_needles, &mut rng);
+    // bench_forest::<9>(&points, &simd_needles, &mut rng);
+    // bench_forest::<10>(&points, &simd_needles, &mut rng);
 
     // bench_ball_tree::<1>(&points, &seq_needles, &mut rng);
     // bench_ball_tree::<2>(&points, &seq_needles, &mut rng);
