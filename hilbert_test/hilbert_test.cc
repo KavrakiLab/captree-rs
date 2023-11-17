@@ -12,33 +12,33 @@
 #include <eigen3/Eigen/Eigen>
 
 #include <highfive/H5File.hpp>
-#include <hilbert-sort.h>
 #include <pdqsort.h>
+#include "hilbert-sort.h"
 
+constexpr const std::size_t Dim = 3;
 constexpr const std::size_t HilbertOrder = 1;
-constexpr const std::size_t HilbertFactor = 10000;
-using Point = std::array<float, 3>;
-using PointInt = std::array<uint32_t, 3>;
+constexpr const std::size_t HilbertFactor = 1000;
+using Point = std::array<float, Dim>;
+using PointInt = std::array<uint_fast32_t, Dim>;
 
-uint32_t remap_point(float x, float min, float max)
+constexpr auto remap_point(float x, float min, float max) -> uint32_t
 {
-    return ((x - min) / (max - min)) * HilbertFactor;
+    return ((x - min) / (max - min)) * static_cast<float>(HilbertFactor);
 }
 
-struct PointHilbert
+alignas(32) struct PointHilbert
 {
     PointHilbert(Point a) : point(a){};
 
-    void compute(float min, float max)
+    constexpr auto compute(float min, float max)
     {
         const PointInt pi = {remap_point(point[0], min, max), remap_point(point[1], min, max),
                              remap_point(point[2], min, max)};
-        // std::cout << pi[0] << " " << pi[1] << " " << pi[2] << std::endl;
-        hilbert = hilbert::hilbert_distance_by_coords<PointInt, HilbertOrder, 3>(pi);
+        hilbert = hilbert::hilbert_distance_by_coords<PointInt, HilbertOrder, Dim>(pi);
     }
 
-    std::array<float, 3> point;
-    uint64_t hilbert;
+    std::array<float, Dim> point;
+    uint32_t hilbert;
 };
 
 auto dist(Point a, Point b) -> float
@@ -65,25 +65,20 @@ int main(int argc, char **argv)
         auto raw_pointcloud = dataset.read<std::vector<Point>>();
         std::cout << raw_pointcloud.size() << " points loaded" << std::endl;
 
-        float min = 1000;
-        float max = -1000;
-
+        float min = 0, max = 0;
         double avg_pair_dist_before = 0;
         for (auto i = 0u; i < raw_pointcloud.size() - 1; ++i)
         {
             avg_pair_dist_before += dist(raw_pointcloud[i], raw_pointcloud[i + 1]);
-            min = std::min(min, raw_pointcloud[i][0]);
-            min = std::min(min, raw_pointcloud[i][1]);
-            min = std::min(min, raw_pointcloud[i][2]);
-            max = std::max(max, raw_pointcloud[i][0]);
-            max = std::max(max, raw_pointcloud[i][1]);
-            max = std::max(max, raw_pointcloud[i][2]);
+
+            min = std::min({min, raw_pointcloud[i][0], raw_pointcloud[i][1], raw_pointcloud[i][2]});
+            max = std::max({max, raw_pointcloud[i][0], raw_pointcloud[i][1], raw_pointcloud[i][2]});
         }
         avg_pair_dist_before /= raw_pointcloud.size() - 1;
+
         std::vector<PointHilbert> hilbert_points(raw_pointcloud.begin(), raw_pointcloud.end());
 
         auto start_time = std::chrono::steady_clock::now();
-
         for (auto i = 0u; i < hilbert_points.size(); ++i)
         {
             hilbert_points[i].compute(min, max);
