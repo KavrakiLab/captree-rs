@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import Enum, auto
 from math import isclose
+from sys import argv
 
 import h5py
 import numpy as np
@@ -221,9 +222,24 @@ def _update_bounds(node: Node, lower: bool, bounds: Bounds, val: float) -> Bound
   return bounds
 
 rng = np.random.default_rng()
-x = rng.uniform(-5.0, 5.0, 1024)
-y = rng.uniform(-5.0, 5.0, 1024)
-z = rng.uniform(0.0, 5.0, 1024)
+MAX_SIZE = 4096
+if len(argv) > 1:
+  points_data = h5py.File(argv[1])["pointcloud/points"]
+  x = points_data[:, 0]
+  y = points_data[:, 1]
+  z = points_data[:, 2]
+  print(points_data.size, x.size, y.size, z.size)
+  if points_data.size > MAX_SIZE:
+    indices = rng.choice(x.size, size=MAX_SIZE, replace=False)
+    x = x[indices]
+    y = y[indices]
+    z = z[indices]
+else:
+  x = rng.uniform(-5.0, 5.0, MAX_SIZE)
+  y = rng.uniform(-5.0, 5.0, MAX_SIZE)
+  z = rng.uniform(0.0, 5.0, MAX_SIZE)
+
+print(x.size, y.size, z.size)
 points = Points(x, y, z)
 tree = build_kd(points)
 forward_volumes(tree, 0.05)
