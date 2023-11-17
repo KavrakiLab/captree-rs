@@ -1,3 +1,9 @@
 [submodule "nigh_bench/nigh"]
 	path = nigh_bench/nigh
 	url = git@github.com:KavrakiLab/nigh.git
+[submodule "hilbert_test/hilbert-sort"]
+	path = hilbert_test/hilbert-sort
+	url = git@github.com:rkowalewski/hilbert-sort.git
+[submodule "hilbert_test/pdqsort"]
+	path = hilbert_test/pdqsort
+	url = git@github.com:orlp/pdqsort.git

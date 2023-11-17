@@ -4,3 +4,5 @@ flamegraph.svg
 perf.*
 *.csv
 .vscode
+/hilbert_test/build/
+*.idx
