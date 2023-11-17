@@ -101,7 +101,9 @@ impl<const D: usize> AffordanceTree<D> {
                 let cell_center = frame.points[0];
 
                 let center_furthest_distsq = frame.volume.furthest_distsq_to(&cell_center);
-                frame.possible_collisions.retain(|pt| {
+                affordances.push(cell_center);
+                aff_starts.push(affordances.len());
+                affordances.extend(frame.possible_collisions.into_iter().filter(|pt| {
                     let closest = frame.volume.closest_point(pt);
                     let center_dist = distsq(cell_center, closest);
                     let closest_dist = distsq(*pt, closest);
@@ -109,10 +111,7 @@ impl<const D: usize> AffordanceTree<D> {
                     cell_center != *pt // not a duplicate
                         && closest_dist < center_furthest_distsq // not always covered by center contacts 
                         && rsq_range.0 < center_dist // closer to the boundary then the center
-                });
-                affordances.push(cell_center);
-                aff_starts.push(affordances.len());
-                affordances.extend(frame.possible_collisions);
+                }));
 
                 if let Some(f) = stack.pop() {
                     frame = f;
