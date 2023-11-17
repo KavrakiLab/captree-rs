@@ -45,6 +45,7 @@ struct Volume<const D: usize> {
     upper: [f32; D],
 }
 
+#[derive(Debug)]
 struct BuildStackFrame<'a, const D: usize> {
     points: &'a mut [[f32; D]],
     d: u8,
@@ -103,7 +104,6 @@ impl<const D: usize> AffordanceTree<D> {
 
                 let center_furthest_distsq = frame.volume.furthest_distsq_to(&cell_center);
                 affordances.push(cell_center);
-                aff_starts.push(affordances.len());
                 affordances.extend(frame.possible_collisions.into_iter().filter(|pt| {
                     let closest = frame.volume.closest_point(pt);
                     let center_dist = distsq(cell_center, closest);
@@ -113,6 +113,7 @@ impl<const D: usize> AffordanceTree<D> {
                         && closest_dist < center_furthest_distsq // not always covered by center contacts 
                         && rsq_range.0 < center_dist // closer to the boundary then the center
                 }));
+                aff_starts.push(affordances.len());
 
                 if let Some(f) = stack.pop() {
                     frame = f;
@@ -363,7 +364,7 @@ mod tests {
     #[test]
     fn exact_query_single() {
         let points = [[0.0, 0.1], [0.4, -0.2], [-0.2, -0.1]];
-        let t = AffordanceTree::new(&points, (0.0, 0.04), &mut thread_rng());
+        let t = AffordanceTree::new(&points, (0.0, 0.2f32.powi(2)), &mut thread_rng());
 
         println!("{t:?}");
 
