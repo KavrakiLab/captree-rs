@@ -105,13 +105,13 @@ impl<const D: usize> AffordanceTree<D> {
                 let center_furthest_distsq = frame.volume.furthest_distsq_to(&cell_center);
                 affordances.push(cell_center);
                 affordances.extend(frame.possible_collisions.into_iter().filter(|pt| {
-                    let closest = frame.volume.closest_point(pt);
-                    let center_dist = distsq(cell_center, closest);
-                    let closest_dist = distsq(*pt, closest);
                     // check for contacting the volume is already covered
                     cell_center != *pt // not a duplicate
-                        && closest_dist < center_furthest_distsq // not always covered by center contacts 
-                        && rsq_range.0 < center_dist // closer to the boundary then the center
+                    && {
+                        let closest = frame.volume.closest_point(pt);
+                        rsq_range.0 < distsq(cell_center, closest) // closer to the boundary then the center
+                        && distsq(*pt, closest) < center_furthest_distsq // not always covered by center contacts
+                    }
                 }));
                 aff_starts.push(affordances.len());
 
@@ -132,13 +132,13 @@ impl<const D: usize> AffordanceTree<D> {
                 // retain only points which might be in the affordance buffer for the split-out
                 // cells
                 lo_afford.retain(|pt| {
-                    if rsq_range.0 < hi_vol.furthest_distsq_to(pt)
-                        && hi_vol.distsq_to(pt) < rsq_range.1
+                    if hi_vol.distsq_to(pt) < rsq_range.1
+                        && rsq_range.0 < hi_vol.furthest_distsq_to(pt)
                     {
                         hi_afford.push(*pt);
                     }
-                    rsq_range.0 < low_vol.furthest_distsq_to(pt)
-                        && low_vol.distsq_to(pt) < rsq_range.1
+                    low_vol.distsq_to(pt) < rsq_range.1
+                        && rsq_range.0 < low_vol.furthest_distsq_to(pt)
                 });
 
                 // because the stack is FIFO, we must put the left recursion last
