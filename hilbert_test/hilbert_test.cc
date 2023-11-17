@@ -12,8 +12,8 @@
 #include <eigen3/Eigen/Eigen>
 
 #include <highfive/H5File.hpp>
-#include <hilbert-sort.h>
 #include <pdqsort.h>
+#include "hilbert-sort.h"
 
 constexpr const std::size_t Dim = 3;
 constexpr const std::size_t HilbertOrder = 1;
