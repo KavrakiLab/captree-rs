@@ -102,5 +102,30 @@ int main(int argc, char **argv)
         std::cout << "time (s): " << static_cast<double>(sort_time) / 1e9 << std::endl;
         std::cout << "avg seq-pair dist before: " << avg_pair_dist_before << std::endl;
         std::cout << "avg seq-pair dist after : " << avg_pair_dist_after << std::endl;
+
+        std::vector<Point> filtered;
+        filtered.resize(raw_pointcloud.size());
+        filtered[0] = hilbert_points[0].point;
+
+        auto j = 0u;
+        for (auto i = 1u; i < hilbert_points.size(); ++i)
+        {
+            const float d = dist(filtered[j], hilbert_points[i].point);
+            if (d > 1e-2)
+            {
+                filtered[++j] = hilbert_points[i].point;
+            }
+        }
+
+        filtered.resize(j);
+        std::cout << "filtered size: " << j << std::endl;
+
+        double avg_pair_dist_filtered = 0;
+        for (auto i = 0u; i < filtered.size() - 1; ++i)
+        {
+            avg_pair_dist_filtered += dist(filtered[i], filtered[i + 1]);
+        }
+        avg_pair_dist_filtered /= raw_pointcloud.size() - 1;
+        std::cout << "avg seq-pair dist filtered: " << avg_pair_dist_filtered << std::endl;
     }
 }
