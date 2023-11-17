@@ -8,7 +8,7 @@ use std::{
 
 use rand::Rng;
 
-use crate::distsq;
+use crate::{distsq, median_partition};
 
 #[derive(Clone, Debug)]
 struct RandomizedTree<const D: usize> {
@@ -103,17 +103,15 @@ impl<const D: usize> RandomizedTree<D> {
             test_dims: &mut [u8],
             i: usize,
             state: u32,
+            rng: &mut impl Rng,
         ) {
-            // TODO make this algorithm O(n log n) instead of O(n log^2 n)
             if points.len() > 1 {
                 let d = state as usize % D;
-                points.sort_unstable_by(|a, b| a[d].partial_cmp(&b[d]).unwrap());
-                let median = (points[points.len() / 2 - 1][d] + points[points.len() / 2][d]) / 2.0;
-                tests[i] = median;
+                tests[i] = median_partition(points, d, rng);
                 test_dims[i] = u8::try_from(d).unwrap();
                 let (lhs, rhs) = points.split_at_mut(points.len() / 2);
-                recur_sort_points(lhs, tests, test_dims, 2 * i + 1, xorshift(state));
-                recur_sort_points(rhs, tests, test_dims, 2 * i + 2, xorshift(state));
+                recur_sort_points(lhs, tests, test_dims, 2 * i + 1, xorshift(state), rng);
+                recur_sort_points(rhs, tests, test_dims, 2 * i + 2, xorshift(state), rng);
             }
         }
 
@@ -134,6 +132,7 @@ impl<const D: usize> RandomizedTree<D> {
             test_dims.as_mut(),
             0,
             seed,
+            rng,
         );
 
         Self {
