@@ -17,9 +17,6 @@ fn main() {
     }
 
     let (needles, _) = make_needles::<3, 2>(&mut rng, n_trials);
-    let ball_tree = pkdt::BallTree::<3, 2>::new3(&points, &mut rng);
-    println!("{ball_tree:?}");
-    assert!(ball_tree.is_valid());
 
     for (i, &needle) in needles.iter().enumerate() {
         println!("iter {i}");
@@ -29,16 +26,5 @@ fn main() {
             .sqrt();
         let exact_dist = dist(kdt.get_point(kdt.query1_exact(needle)), needle);
         assert_eq!(exact_dist, exact_kiddo_dist);
-
-        assert!(ball_tree.collides(needle, exact_kiddo_dist + f32::EPSILON));
-
-        assert!(!ball_tree.collides(
-            needle,
-            if exact_kiddo_dist < 0.02 {
-                f32::EPSILON
-            } else {
-                exact_kiddo_dist - 0.02f32
-            }
-        ));
     }
 }

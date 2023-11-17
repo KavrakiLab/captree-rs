@@ -9,11 +9,9 @@ use std::{
 };
 
 mod affordance;
-mod ball;
 mod forest;
 
 pub use affordance::AffordanceTree;
-pub use ball::BallTree;
 pub use forest::PkdForest;
 use rand::{thread_rng, Rng};
 
