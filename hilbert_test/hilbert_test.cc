@@ -16,16 +16,24 @@
 #include <pdqsort.h>
 
 constexpr const std::size_t HilbertOrder = 1;
+constexpr const std::size_t HilbertFactor = 10000;
 using Point = std::array<float, 3>;
-using PointInt = std::array<uint16_t, 3>;
+using PointInt = std::array<uint32_t, 3>;
+
+uint32_t remap_point(float x, float min, float max)
+{
+    return ((x - min) / (max - min)) * HilbertFactor;
+}
 
 struct PointHilbert
 {
     PointHilbert(Point a) : point(a){};
 
-    void compute()
+    void compute(float min, float max)
     {
-        const PointInt pi = {1000 * point[0], 1000 * point[1], 1000 * point[2]};
+        const PointInt pi = {remap_point(point[0], min, max), remap_point(point[1], min, max),
+                             remap_point(point[2], min, max)};
+        // std::cout << pi[0] << " " << pi[1] << " " << pi[2] << std::endl;
         hilbert = hilbert::hilbert_distance_by_coords<PointInt, HilbertOrder, 3>(pi);
     }
 
@@ -57,20 +65,28 @@ int main(int argc, char **argv)
         auto raw_pointcloud = dataset.read<std::vector<Point>>();
         std::cout << raw_pointcloud.size() << " points loaded" << std::endl;
 
+        float min = 1000;
+        float max = -1000;
+
         double avg_pair_dist_before = 0;
         for (auto i = 0u; i < raw_pointcloud.size() - 1; ++i)
         {
             avg_pair_dist_before += dist(raw_pointcloud[i], raw_pointcloud[i + 1]);
+            min = std::min(min, raw_pointcloud[i][0]);
+            min = std::min(min, raw_pointcloud[i][1]);
+            min = std::min(min, raw_pointcloud[i][2]);
+            max = std::max(max, raw_pointcloud[i][0]);
+            max = std::max(max, raw_pointcloud[i][1]);
+            max = std::max(max, raw_pointcloud[i][2]);
         }
         avg_pair_dist_before /= raw_pointcloud.size() - 1;
-
         std::vector<PointHilbert> hilbert_points(raw_pointcloud.begin(), raw_pointcloud.end());
 
         auto start_time = std::chrono::steady_clock::now();
 
         for (auto i = 0u; i < hilbert_points.size(); ++i)
         {
-            hilbert_points[i].compute();
+            hilbert_points[i].compute(min, max);
         }
 
         pdqsort_branchless(std::begin(hilbert_points), std::end(hilbert_points),
