@@ -56,8 +56,7 @@ struct BuildStackFrame<'a, const D: usize> {
 
 impl<const D: usize> AffordanceTree<D> {
     #[must_use]
-    #[allow(clippy::too_many_lines)]
-    #[allow(clippy::cast_possible_truncation)]
+    #[allow(clippy::cast_possible_truncation, clippy::float_cmp)]
     /// Construct a new affordance tree containing all the points in `points`.
     /// `rsq_range` is a `(minimum, maximum)` pair containing the lower and upper bound on the
     /// radius of the balls which will be queried against the tree.
