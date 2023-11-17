@@ -21,11 +21,13 @@ using PointInt = std::array<uint16_t, 3>;
 
 struct PointHilbert
 {
-    PointHilbert(Point a) : point(a)
+    PointHilbert(Point a) : point(a){};
+
+    void compute()
     {
         const PointInt pi = {1000 * point[0], 1000 * point[1], 1000 * point[2]};
         hilbert = hilbert::hilbert_distance_by_coords<PointInt, HilbertOrder, 3>(pi);
-    };
+    }
 
     std::array<float, 3> point;
     uint64_t hilbert;
@@ -62,9 +64,14 @@ int main(int argc, char **argv)
         }
         avg_pair_dist_before /= raw_pointcloud.size() - 1;
 
+        std::vector<PointHilbert> hilbert_points(raw_pointcloud.begin(), raw_pointcloud.end());
+
         auto start_time = std::chrono::steady_clock::now();
 
-        std::vector<PointHilbert> hilbert_points(raw_pointcloud.begin(), raw_pointcloud.end());
+        for (auto i = 0u; i < hilbert_points.size(); ++i)
+        {
+            hilbert_points[i].compute();
+        }
 
         pdqsort_branchless(std::begin(hilbert_points), std::end(hilbert_points),
                            [](const PointHilbert &a, const PointHilbert &b)
