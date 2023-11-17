@@ -26,7 +26,7 @@ constexpr auto remap_point(float x, float min, float max) -> uint32_t
     return ((x - min) / (max - min)) * static_cast<float>(HilbertFactor);
 }
 
-alignas(32)struct PointHilbert
+alignas(32) struct PointHilbert
 {
     PointHilbert(Point a) : point(a){};
 
