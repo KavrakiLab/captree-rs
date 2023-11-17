@@ -4,7 +4,7 @@ use std::{hint::black_box, simd::Simd, time::Instant};
 
 use kiddo::SquaredEuclidean;
 use pkdt::{AffordanceTree, PkdForest};
-use pkdt_bench::{get_points, make_needles};
+use pkdt_bench::get_points;
 use rand::{seq::SliceRandom, Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 
@@ -35,8 +35,8 @@ fn main() {
 
     println!("testing for performance...");
 
-    let (seq_needles, simd_needles) = make_needles(&mut rng, n_trials);
-    // let (seq_needles, simd_needles) = make_correlated_needles(&mut rng, n_trials);
+    let (seq_needles, simd_needles) = pkdt_bench::make_needles(&mut rng, n_trials);
+    // let (seq_needles, simd_needles) = pkdt_bench::make_correlated_needles(&mut rng, n_trials);
 
     bench_affordance(&points, &simd_needles, &seq_needles, &mut rng);
 
@@ -47,11 +47,25 @@ fn main() {
         black_box(kiddo_kdt.within_unsorted::<SquaredEuclidean>(needle, 0.01f32.powi(2)));
     }
     let toc = Instant::now();
-    let kiddo_time = toc.duration_since(tic);
+    let kiddo_range_time = toc.duration_since(tic);
+
     println!(
-        "completed kiddo in {:?} ({:?}/q)",
-        kiddo_time,
-        kiddo_time / seq_needles.len() as u32
+        "completed kiddo (range) in {:?} ({:?}/q)",
+        kiddo_range_time,
+        kiddo_range_time / seq_needles.len() as u32
+    );
+
+    let tic = Instant::now();
+    for needle in &seq_needles {
+        black_box(kiddo_kdt.nearest_one::<SquaredEuclidean>(needle).distance < 0.01f32.powi(2));
+    }
+    let toc = Instant::now();
+    let kiddo_exact_time = toc.duration_since(tic);
+
+    println!(
+        "completed kiddo (exact) in {:?} ({:?}/q)",
+        kiddo_exact_time,
+        kiddo_exact_time / seq_needles.len() as u32
     );
 
     // let tic = Instant::now();
@@ -105,10 +119,6 @@ fn main() {
     println!(
         "speedup: {}% vs single-query",
         (100.0 * (seq_time.as_secs_f64() / simd_time.as_secs_f64() - 1.0)) as u64
-    );
-    println!(
-        "speedup: {}% vs kiddo",
-        (100.0 * (kiddo_time.as_secs_f64() / simd_time.as_secs_f64() - 1.0)) as u64
     );
 }
 
