@@ -45,6 +45,14 @@ struct Volume<const D: usize> {
     upper: [f32; D],
 }
 
+struct BuildStackFrame<'a, const D: usize> {
+    points: &'a mut [[f32; D]],
+    d: u8,
+    i: usize,
+    possible_collisions: Vec<[f32; D]>,
+    volume: Volume<D>,
+}
+
 impl<const D: usize> AffordanceTree<D> {
     #[must_use]
     #[allow(clippy::too_many_lines)]
@@ -62,30 +70,39 @@ impl<const D: usize> AffordanceTree<D> {
     ///
     /// This function will panic if `D` is greater than or equal to 255.
     pub fn new(points: &[[f32; D]], rsq_range: (f32, f32), rng: &mut impl Rng) -> Self {
-        #[allow(clippy::float_cmp)]
-        #[allow(clippy::too_many_arguments)]
-        /// Recursive helper function to sort the points for the KD tree and generate the tests.
-        /// Runs in O(n log n)
-        fn build_tree<const D: usize>(
-            points: &mut [[f32; D]],
-            tests: &mut [f32],
-            d: u8,
-            i: usize,
-            mut possible_collisions: Vec<[f32; D]>,
-            volume: Volume<D>,
-            ranges: &mut Vec<usize>,
-            affordances: &mut Vec<[f32; D]>,
-            rsq_range: (f32, f32),
-            rng: &mut impl Rng,
-        ) {
-            if points.len() <= 1 {
-                // Leaf case - filter out all the points which are needed in affordance and populate
-                // the buffer.
-                let cell_center = points[0];
+        assert!(D < u8::MAX as usize);
 
-                let center_furthest_distsq = volume.furthest_distsq_to(&cell_center);
-                possible_collisions.retain(|pt| {
-                    let closest = volume.closest_point(pt);
+        let n2 = points.len().next_power_of_two();
+
+        let mut tests = vec![f32::INFINITY; n2 - 1].into_boxed_slice();
+
+        // hack: just pad with infinity to make it a power of 2
+        let mut new_points = vec![[f32::INFINITY; D]; n2].into_boxed_slice();
+        new_points[..points.len()].copy_from_slice(points);
+        let mut affordances = Vec::with_capacity(n2);
+        let possible_collisions = new_points.clone().to_vec();
+        let mut aff_starts = Vec::with_capacity(n2 + 1);
+
+        let mut stack = Vec::with_capacity(n2.ilog2() as usize);
+        let mut frame = BuildStackFrame {
+            points: &mut new_points,
+            d: 0,
+            i: 0,
+            possible_collisions,
+            volume: Volume {
+                lower: [-f32::INFINITY; D],
+                upper: [f32::INFINITY; D],
+            },
+        };
+
+        // Iteratively-transformed construction procedure
+        loop {
+            if frame.points.len() <= 1 {
+                let cell_center = frame.points[0];
+
+                let center_furthest_distsq = frame.volume.furthest_distsq_to(&cell_center);
+                frame.possible_collisions.retain(|pt| {
+                    let closest = frame.volume.closest_point(pt);
                     let center_dist = distsq(cell_center, closest);
                     let closest_dist = distsq(*pt, closest);
                     // check for contacting the volume is already covered
@@ -93,18 +110,22 @@ impl<const D: usize> AffordanceTree<D> {
                         && closest_dist < center_furthest_distsq // not always covered by center contacts 
                         && rsq_range.0 < center_dist // closer to the boundary then the center
                 });
-                possible_collisions.push(cell_center);
-                let l = possible_collisions.len();
-                possible_collisions.swap(0, l - 1); // put the center at the front
-                ranges.push(affordances.len());
-                affordances.extend(possible_collisions);
+                affordances.push(cell_center);
+                aff_starts.push(affordances.len());
+                affordances.extend(frame.possible_collisions);
+
+                if let Some(f) = stack.pop() {
+                    frame = f;
+                } else {
+                    break;
+                }
             } else {
                 // split the volume in half
-                tests[i] = median_partition(points, d as usize, rng);
-                let next_dim = (d + 1) % D as u8;
-                let (lhs, rhs) = points.split_at_mut(points.len() / 2);
-                let (low_vol, hi_vol) = volume.split(tests[i], d as usize);
-                let mut lo_afford = possible_collisions.clone();
+                tests[frame.i] = median_partition(frame.points, frame.d as usize, rng);
+                let next_dim = (frame.d + 1) % D as u8;
+                let (lhs, rhs) = frame.points.split_at_mut(frame.points.len() / 2);
+                let (low_vol, hi_vol) = frame.volume.split(tests[frame.i], frame.d as usize);
+                let mut lo_afford = frame.possible_collisions.clone();
                 let mut hi_afford = Vec::with_capacity(lo_afford.len());
 
                 // retain only points which might be in the affordance buffer for the split-out
@@ -118,67 +139,34 @@ impl<const D: usize> AffordanceTree<D> {
                     rsq_range.0 < low_vol.furthest_distsq_to(pt)
                         && low_vol.distsq_to(pt) < rsq_range.1
                 });
-                build_tree(
-                    lhs,
-                    tests,
-                    next_dim,
-                    2 * i + 1,
-                    lo_afford,
-                    low_vol,
-                    ranges,
-                    affordances,
-                    rsq_range,
-                    rng,
-                );
-                build_tree(
-                    rhs,
-                    tests,
-                    next_dim,
-                    2 * i + 2,
-                    hi_afford,
-                    hi_vol,
-                    ranges,
-                    affordances,
-                    rsq_range,
-                    rng,
-                );
+
+                // because the stack is FIFO, we must put the left recursion last
+                stack.push(BuildStackFrame {
+                    points: rhs,
+                    d: next_dim,
+                    i: 2 * frame.i + 2,
+                    possible_collisions: hi_afford,
+                    volume: hi_vol,
+                });
+
+                // Save a push/pop operation by directly updating the current frame
+                frame = BuildStackFrame {
+                    points: lhs,
+                    d: next_dim,
+                    i: 2 * frame.i + 1,
+                    possible_collisions: lo_afford,
+                    volume: low_vol,
+                };
             }
         }
 
-        assert!(D < u8::MAX as usize);
-
-        let n2 = points.len().next_power_of_two();
-
-        let mut tests = vec![f32::INFINITY; n2 - 1].into_boxed_slice();
-
-        // hack: just pad with infinity to make it a power of 2
-        let mut new_points = vec![[f32::INFINITY; D]; n2].into_boxed_slice();
-        new_points[..points.len()].copy_from_slice(points);
-        let mut points = Vec::with_capacity(n2);
-        let possible_collisions = new_points.clone().to_vec();
-        let mut ranges = Vec::with_capacity(n2 + 1);
-        build_tree(
-            new_points.as_mut(),
-            tests.as_mut(),
-            0,
-            0,
-            possible_collisions,
-            Volume {
-                lower: [-f32::INFINITY; D],
-                upper: [f32::INFINITY; D],
-            },
-            &mut ranges,
-            &mut points,
-            rsq_range,
-            rng,
-        );
-        ranges.push(points.len());
+        aff_starts.push(affordances.len());
 
         AffordanceTree {
             tests,
             rsq_range,
-            aff_starts: ranges.into_boxed_slice(),
-            points: points.into_boxed_slice(),
+            aff_starts: aff_starts.into_boxed_slice(),
+            points: affordances.into_boxed_slice(),
         }
     }
 
@@ -378,6 +366,8 @@ mod tests {
     fn exact_query_single() {
         let points = [[0.0, 0.1], [0.4, -0.2], [-0.2, -0.1]];
         let t = AffordanceTree::new(&points, (0.0, 0.04), &mut thread_rng());
+
+        println!("{t:?}");
 
         let q0 = [0.0, -0.01];
         assert!(t.collides(&q0, (0.12f32).powi(2)));
