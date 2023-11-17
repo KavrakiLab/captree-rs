@@ -17,16 +17,16 @@
 
 constexpr const std::size_t Dim = 3;
 constexpr const std::size_t HilbertOrder = 1;
-constexpr const std::size_t HilbertFactor = 10000;
+constexpr const std::size_t HilbertFactor = 1000;
 using Point = std::array<float, Dim>;
-using PointInt = std::array<uint32_t, Dim>;
+using PointInt = std::array<uint_fast32_t, Dim>;
 
 constexpr auto remap_point(float x, float min, float max) -> uint32_t
 {
     return ((x - min) / (max - min)) * static_cast<float>(HilbertFactor);
 }
 
-struct PointHilbert
+alignas(32)struct PointHilbert
 {
     PointHilbert(Point a) : point(a){};
 
@@ -38,7 +38,7 @@ struct PointHilbert
     }
 
     std::array<float, Dim> point;
-    uint64_t hilbert;
+    uint32_t hilbert;
 };
 
 auto dist(Point a, Point b) -> float

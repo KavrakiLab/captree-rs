@@ -26,18 +26,18 @@ namespace hilbert
         template <class CoordT>
         struct MortonEncoder<CoordT, 2>
         {
-            uint64_t operator()(std::array<CoordT, 2> point)
+            uint32_t operator()(std::array<CoordT, 2> point)
             {
-                return libmorton::morton2D_64_encode(std::get<1>(point), std::get<0>(point));
+                return libmorton::morton2D_32_encode(std::get<1>(point), std::get<0>(point));
             }
         };
 
         template <class CoordT>
         struct MortonEncoder<CoordT, 3>
         {
-            uint64_t operator()(std::array<CoordT, 3> point)
+            uint32_t operator()(std::array<CoordT, 3> point)
             {
-                return libmorton::morton3D_64_encode(std::get<2>(point), std::get<1>(point),
+                return libmorton::morton3D_32_encode(std::get<2>(point), std::get<1>(point),
                                                      std::get<0>(point));
             }
         };
@@ -45,7 +45,7 @@ namespace hilbert
     }  // namespace detail
 
     template <class PointT, size_t NDim>
-    static uint64_t transpose_to_hilbert_integer(PointT point)
+    static uint32_t transpose_to_hilbert_integer(PointT point)
     {
         return detail::MortonEncoder<typename PointT::value_type, NDim>{}(point);
     }
