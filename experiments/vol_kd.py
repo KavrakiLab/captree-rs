@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import InitVar, dataclass, field
 from enum import Enum, auto
 from math import isclose
 from sys import argv
@@ -31,28 +31,28 @@ class Bounds:
   y: NDArray
   z: NDArray
 
-  def __sub__(self, b: Bounds) -> Bounds:
-    return Bounds(self.x - b.x, self.y - b.y, self.z - b.z)
-
-  def __add__(self, v: float) -> Bounds:
-    return Bounds(self.x + v, self.y + v, self.z + v)
-
-  def intersection_volume(self, b: Bounds) -> float:
-    return (max(max(self.x[0], b.x[0]), 0.0) - max(min(self.x[1], b.x[1]), 0.0)) * \
-        (max(max(self.y[0], b.y[0]), 0.0) - max(min(self.y[1], b.y[1]), 0.0)) * \
-        (max(max(self.z[0], b.z[0]), 0.0) - max(min(self.z[1], b.z[1]), 0.0))
-
-
 @dataclass(slots=True)
 class Node:
   bounds: Bounds
   closest_dists: Bounds
   axis: Axis
   split_val: float
+  rad_arr: InitVar[NDArray]
+  inner: Bounds = field(init=False)
   parent: Node | None = None
   is_leaf: bool = False
   children: list[Node] = field(default_factory=list)
   affordance_volumes: list[Node] = field(default_factory=list)
+
+  def __post_init__(self, rad_arr: NDArray):
+    x = self.bounds.x - self.closest_dists.x + rad_arr
+    y = self.bounds.y - self.closest_dists.y + rad_arr
+    z = self.bounds.z - self.closest_dists.z + rad_arr
+    self.inner = Bounds(x, y, z)
+
+
+  def __repr__(self) -> str:
+    return f"Node(b={self.bounds}, d={self.closest_dists}, a={self.axis}, s={self.split_val}, l={self.is_leaf})"
 
 
 @dataclass(slots=True)
@@ -83,7 +83,8 @@ def split(data: Points, axis: Axis) -> tuple[float, float, Points, Points]:
   return split_val, split_dist, low_points, high_points
 
 
-def build_kd(data: Points) -> Node:
+def build_kd(data: Points, max_rad: float) -> Node:
+  rad_arr = np.array((-max_rad, max_rad))
   axis = Axis.X
   # Initial sort on axis
   if axis == Axis.X:
@@ -107,13 +108,13 @@ def build_kd(data: Points) -> Node:
       ),
       Bounds(np.zeros(2), np.zeros(2), np.zeros(2)),
       axis,
-      split_val
+      split_val, rad_arr
   )
   queue = [(root, split_dist, low_set, high_set)]
   while queue:
     p, d, l, h = queue.pop()
     axis = axis.next()
-    l_node = make_child(p, d, axis, True)
+    l_node = make_child(p, d, axis, rad_arr, True)
     if l.x.size == 1:
       l_node.is_leaf = True
       
@@ -123,7 +124,7 @@ def build_kd(data: Points) -> Node:
       l_node.split_val = l_split_val
       queue.append((l_node, l_split_dist, l_low_set, l_high_set))
 
-    h_node = make_child(p, d, axis, False)
+    h_node = make_child(p, d, axis, rad_arr, False)
     if h.x.size == 1:
       h_node.is_leaf = True
     p.children.append(h_node)
@@ -134,62 +135,95 @@ def build_kd(data: Points) -> Node:
 
   return root
 
+def axis_value(n: Node, axis: Axis) -> float:
+  if axis == Axis.X:
+    return (n.bounds.x[1] + n.bounds.x[0]) / 2.0
+  elif axis == Axis.Y:
+    return (n.bounds.y[1] + n.bounds.y[0]) / 2.0
+  else:
+    return (n.bounds.z[1] + n.bounds.z[0]) / 2.0
 
-def forward_volumes(tree: Node, max_r: float):
+def forward_volumes(tree: Node):
   leaf_count = 0
   leaf_vols = 0
   queue = [(tree.children[0], tree.children[1], tree.affordance_volumes)]
+  #print(tree)
   while queue:
     l_sibling, r_sibling, parent_volumes = queue.pop()
+    #print("L", l_sibling)
+    #print("R", r_sibling)
+
     # Filter the parent volumes, refine to current tree level
-    refine_volumes(l_sibling, parent_volumes, max_r)
-    refine_volumes(r_sibling, parent_volumes, max_r)
+    l_refined = refine_volumes(l_sibling, l_sibling.parent.axis, parent_volumes)
+    r_refined = refine_volumes(r_sibling, r_sibling.parent.axis, parent_volumes)
 
     # Do the siblings intersect?
-    if volumes_intersect(l_sibling, r_sibling, max_r):
-      l_sibling.affordance_volumes.append(r_sibling)
-      r_sibling.affordance_volumes.append(l_sibling)
-
+    if volumes_intersect(l_sibling, r_sibling):
+      l_refined.append(r_sibling)
+      r_refined.append(l_sibling)
+  
+    # l_refined.sort(key = lambda n: axis_value(n, l_sibling.parent.axis))
+    # r_refined.sort(key = lambda n: axis_value(n, r_sibling.parent.axis))
     if not l_sibling.is_leaf:
-      queue.append((l_sibling.children[0], l_sibling.children[1], l_sibling.affordance_volumes))
+      queue.append((l_sibling.children[0], l_sibling.children[1], l_refined))
     else:
+      l_sibling.affordance_volumes = l_refined
       leaf_count += 1
       leaf_vols += len(l_sibling.affordance_volumes)
+      if leaf_count % 1000 == 0:
+        print(f"Processed {leaf_count} leaves")
 
     if not r_sibling.is_leaf:
-      queue.append((r_sibling.children[0], r_sibling.children[1], r_sibling.affordance_volumes))
+      queue.append((r_sibling.children[0], r_sibling.children[1], r_refined))
     else:
+      r_sibling.affordance_volumes = r_refined
       leaf_count += 1
       leaf_vols += len(r_sibling.affordance_volumes)
+      if leaf_count % 1000 == 0:
+        print(f"Processed {leaf_count} leaves")
+    
+  print(f"{leaf_count} total leaves")
+  print(f"Average number of volumes: {leaf_vols / leaf_count}")
+
+def volumes_intersect(l_node: Node, r_node: Node) -> bool:
+  l_vol = l_node.inner
+  r_vol = r_node.inner
+  if l_vol.x[0] > r_vol.x[1] or r_vol.x[0] > l_vol.x[1]:
+    return False
   
-  print(f"Average volumes: {leaf_vols / leaf_count}")
+  if l_vol.y[0] > r_vol.y[1] or r_vol.y[0] > l_vol.y[1]:
+    return False
+  
+  if l_vol.z[0] > r_vol.z[1] or r_vol.z[0] > l_vol.z[1]:
+    return False
+  
+  return True
 
 
-def volumes_intersect(l: Node, r: Node, rad: float) -> bool:
-  l_inner = l.bounds - l.closest_dists + rad
-  r_inner = r.bounds - r.closest_dists + rad
-  return isclose(r_inner.intersection_volume(l_inner), 0.0)
-
-
-def refine_volumes(n: Node, parent_volumes: list[Node], rad: float):
+def refine_volumes(n: Node, parent_axis: Axis, parent_volumes: list[Node]) -> list[Node]:
+  refined = []
+  # TODO: Binary search this - parent_volumes can be sorted along parent split axis
   for v in parent_volumes:
-    if not volumes_intersect(n, v, rad):
+    if not volumes_intersect(n, v):
       continue
 
     if v.is_leaf:
-      n.affordance_volumes.append(v)
+      refined.append(v)
     else:
       for c in v.children:
-        if volumes_intersect(n, c, rad):
-          n.affordance_volumes.append(c)
+        if volumes_intersect(n, c):
+          refined.append(c)
+
+  return refined
 
 
-def make_child(parent: Node, parent_split_dist: float, axis: Axis, low_child: bool) -> Node:
+def make_child(parent: Node, parent_split_dist: float, axis: Axis, rad_arr: NDArray, low_child: bool) -> Node:
   return Node(
       update_bounds(parent, low_child),
       update_dists(parent, parent_split_dist, low_child),
       axis,
       np.infty,
+      rad_arr,
       parent=parent
   )
 
@@ -222,7 +256,7 @@ def _update_bounds(node: Node, lower: bool, bounds: Bounds, val: float) -> Bound
   return bounds
 
 rng = np.random.default_rng()
-MAX_SIZE = 4096
+MAX_SIZE = 2**11
 if len(argv) > 1:
   points_data = h5py.File(argv[1])["pointcloud/points"]
   x = points_data[:, 0]
@@ -241,5 +275,6 @@ else:
 
 print(x.size, y.size, z.size)
 points = Points(x, y, z)
-tree = build_kd(points)
-forward_volumes(tree, 0.05)
+tree = build_kd(points, 0.01)
+print(tree)
+forward_volumes(tree)
