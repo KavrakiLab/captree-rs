@@ -80,15 +80,15 @@ impl<const D: usize> AffordanceTree<D> {
         let mut new_points = vec![[f32::INFINITY; D]; n2].into_boxed_slice();
         new_points[..points.len()].copy_from_slice(points);
         let mut affordances = Vec::with_capacity(n2);
-        let possible_collisions = new_points.clone().to_vec();
         let mut aff_starts = Vec::with_capacity(n2 + 1);
 
         let mut stack = Vec::with_capacity(n2.ilog2() as usize);
+        let points_clone = new_points.clone().to_vec();
         let mut frame = BuildStackFrame {
             points: &mut new_points,
             d: 0,
             i: 0,
-            possible_collisions,
+            possible_collisions: points_clone,
             volume: Volume {
                 lower: [-f32::INFINITY; D],
                 upper: [f32::INFINITY; D],
