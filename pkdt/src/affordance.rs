@@ -1,3 +1,6 @@
+//! Affordance trees, a novel kind of collision tree with excellent performance, branchless queries,
+//! and SIMD batch parallelism.
+
 use std::{
     hint::unreachable_unchecked,
     mem::size_of,
@@ -46,11 +49,22 @@ struct Volume<const D: usize> {
 }
 
 #[derive(Debug)]
+/// Cursed evil structure used for unrolling a recursive function into an iterative one.
+/// This is the contents of a stack frame as used during construction of the tree.
+///
+/// # Generic parameters
+///
+/// - `D`: The dimension of the space.
 struct BuildStackFrame<'a, const D: usize> {
+    /// A slice of the set of points belonging to the subtree currently being constructed.
     points: &'a mut [[f32; D]],
+    /// The current dimension to split on.
     d: u8,
+    /// The current index in the test buffer.
     i: usize,
+    /// The points which might collide with the contents of the current cell.
     possible_collisions: Vec<[f32; D]>,
+    /// The prism occupied by this subtree's cell.
     volume: Volume<D>,
 }
 

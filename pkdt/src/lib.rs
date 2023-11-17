@@ -1,8 +1,10 @@
+//! Efficient, branchless nearest-neighbor trees for robot collision checking.
+
 #![feature(portable_simd)]
 #![feature(slice_swap_unchecked)]
 #![warn(clippy::pedantic)]
 
-use std::{
+use core::{
     hint::unreachable_unchecked,
     mem::size_of,
     simd::{LaneCount, Mask, Simd, SimdConstPtr, SimdPartialOrd, SupportedLaneCount},
