@@ -95,6 +95,7 @@ impl<const D: usize> AffordanceTree<D> {
             },
         };
 
+        aff_starts.push(0);
         // Iteratively-transformed construction procedure
         loop {
             if frame.points.len() <= 1 {
@@ -158,8 +159,6 @@ impl<const D: usize> AffordanceTree<D> {
                 };
             }
         }
-
-        aff_starts.push(affordances.len());
 
         AffordanceTree {
             tests,
@@ -350,9 +349,9 @@ fn clamp(x: f32, min: f32, max: f32) -> f32 {
 
 #[cfg(test)]
 mod tests {
-    use rand::thread_rng;
+    use rand::{thread_rng, Rng};
 
-    use crate::AffordanceTree;
+    use crate::{distsq, AffordanceTree};
 
     #[test]
     fn build_simple() {
@@ -370,5 +369,31 @@ mod tests {
 
         let q0 = [0.0, -0.01];
         assert!(t.collides(&q0, (0.12f32).powi(2)));
+    }
+
+    #[test]
+    fn another_one() {
+        let points = [[0.0, 0.1], [0.4, -0.2], [-0.2, -0.1]];
+        let t = AffordanceTree::new(&points, (0.0, 0.04), &mut thread_rng());
+
+        println!("{t:?}");
+
+        let q0 = [0.003_265_380_9, 0.106_527_805];
+        assert!(t.collides(&q0, 0.0004));
+    }
+
+    #[test]
+    fn fuzz() {
+        const R_SQ: f32 = 0.0004;
+        let points = [[0.0, 0.1], [0.4, -0.2], [-0.2, -0.1]];
+        let mut rng = thread_rng();
+        let t = AffordanceTree::new(&points, (0.0, 0.0008), &mut rng);
+
+        for _ in 0..10_000 {
+            let p = [rng.gen_range(-1.0..1.0), rng.gen_range(-1.0..1.0)];
+            let collides = points.iter().any(|a| distsq(*a, p) < R_SQ);
+            println!("{p:?}; {collides}");
+            assert_eq!(collides, t.collides(&p, R_SQ));
+        }
     }
 }
