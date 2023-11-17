@@ -15,7 +15,7 @@
 #include <hilbert-sort.h>
 #include <pdqsort.h>
 
-constexpr const std::size_t HilbertOrder = 2;
+constexpr const std::size_t HilbertOrder = 1;
 using Point = std::array<float, 3>;
 using PointInt = std::array<uint16_t, 3>;
 
@@ -35,7 +35,6 @@ int main(int argc, char **argv)
     }
     else
     {
-
         auto fname = std::string(argv[1]);
         std::cout << "Opening pointcloud file " << fname << "..." << std::endl;
 
@@ -51,20 +50,21 @@ int main(int argc, char **argv)
         }
         avg_pair_dist_before /= raw_pointcloud.size() - 1;
 
-            auto start_time = std::chrono::steady_clock::now();
+        auto start_time = std::chrono::steady_clock::now();
+
         pdqsort(std::begin(raw_pointcloud), std::end(raw_pointcloud),
-                  [](const Point &a, const Point &b)
-                  {
-                      const PointInt ai = {1000 * a[0], 1000 * a[1], 1000 * a[2]};
-                      const PointInt bi = {1000 * b[0], 1000 * b[1], 1000 * b[2]};
-                      auto const h1 = hilbert::hilbert_distance_by_coords<PointInt, HilbertOrder, 3>(ai);
-                      auto const h2 = hilbert::hilbert_distance_by_coords<PointInt, HilbertOrder, 3>(bi);
-                      return h1 < h2;
-                  });
+                [](const Point &a, const Point &b)
+                {
+                    const PointInt ai = {1000 * a[0], 1000 * a[1], 1000 * a[2]};
+                    const PointInt bi = {1000 * b[0], 1000 * b[1], 1000 * b[2]};
+                    auto const h1 = hilbert::hilbert_distance_by_coords<PointInt, HilbertOrder, 3>(ai);
+                    auto const h2 = hilbert::hilbert_distance_by_coords<PointInt, HilbertOrder, 3>(bi);
+                    return h1 < h2;
+                });
 
         auto sort_time = std::chrono::duration_cast<std::chrono::nanoseconds>(
-                                     std::chrono::steady_clock::now() - start_time)
-                                     .count();
+                             std::chrono::steady_clock::now() - start_time)
+                             .count();
 
         double avg_pair_dist_after = 0;
         for (auto i = 0u; i < raw_pointcloud.size() - 1; ++i)
