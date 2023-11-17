@@ -19,7 +19,19 @@ constexpr const std::size_t HilbertOrder = 1;
 using Point = std::array<float, 3>;
 using PointInt = std::array<uint16_t, 3>;
 
-float dist(Point a, Point b)
+struct PointHilbert
+{
+    PointHilbert(Point a) : point(a)
+    {
+        const PointInt pi = {1000 * point[0], 1000 * point[1], 1000 * point[2]};
+        hilbert = hilbert::hilbert_distance_by_coords<PointInt, HilbertOrder, 3>(pi);
+    };
+
+    std::array<float, 3> point;
+    uint64_t hilbert;
+};
+
+auto dist(Point a, Point b) -> float
 {
     auto x = a[0] - b[0];
     auto y = a[1] - b[1];
@@ -52,24 +64,20 @@ int main(int argc, char **argv)
 
         auto start_time = std::chrono::steady_clock::now();
 
-        pdqsort(std::begin(raw_pointcloud), std::end(raw_pointcloud),
-                [](const Point &a, const Point &b)
-                {
-                    const PointInt ai = {1000 * a[0], 1000 * a[1], 1000 * a[2]};
-                    const PointInt bi = {1000 * b[0], 1000 * b[1], 1000 * b[2]};
-                    auto const h1 = hilbert::hilbert_distance_by_coords<PointInt, HilbertOrder, 3>(ai);
-                    auto const h2 = hilbert::hilbert_distance_by_coords<PointInt, HilbertOrder, 3>(bi);
-                    return h1 < h2;
-                });
+        std::vector<PointHilbert> hilbert_points(raw_pointcloud.begin(), raw_pointcloud.end());
+
+        pdqsort_branchless(std::begin(hilbert_points), std::end(hilbert_points),
+                           [](const PointHilbert &a, const PointHilbert &b)
+                           { return a.hilbert < b.hilbert; });
 
         auto sort_time = std::chrono::duration_cast<std::chrono::nanoseconds>(
                              std::chrono::steady_clock::now() - start_time)
                              .count();
 
         double avg_pair_dist_after = 0;
-        for (auto i = 0u; i < raw_pointcloud.size() - 1; ++i)
+        for (auto i = 0u; i < hilbert_points.size() - 1; ++i)
         {
-            avg_pair_dist_after += dist(raw_pointcloud[i], raw_pointcloud[i + 1]);
+            avg_pair_dist_after += dist(hilbert_points[i].point, hilbert_points[i + 1].point);
         }
         avg_pair_dist_after /= raw_pointcloud.size() - 1;
 
