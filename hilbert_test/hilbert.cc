@@ -110,7 +110,7 @@ constexpr auto hilbert_reimp(std::array<uint_fast32_t, 3> p) -> uint_fast32_t
     const uint_fast32_t z = y ^ p[2];
 
     uint_fast32_t answer = 0;
-    for (auto i = 32u; i > 0; --i)
+    for (auto i = 4u; i > 0; --i)
     {
         const auto shift = (i - 1) * 8;
         answer = answer << 24 |
