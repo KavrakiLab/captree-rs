@@ -127,5 +127,8 @@ int main(int argc, char **argv)
         }
         avg_pair_dist_filtered /= raw_pointcloud.size() - 1;
         std::cout << "avg seq-pair dist filtered: " << avg_pair_dist_filtered << std::endl;
+
+        HighFive::File export_file("filtered.hdf5", HighFive::File::Truncate);
+        export_file.createDataSet("pointcloud/points", filtered);
     }
 }
