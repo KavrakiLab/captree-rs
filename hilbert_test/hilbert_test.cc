@@ -37,6 +37,7 @@ struct PointHilbert
                              remap_point(point[2], min, max)};
         // hilbert = hilbert::hilbert_distance_by_coords<PointInt, HilbertOrder, Dim>(pi);
         hilbert = hilbert_reimp(pi);
+        // hilbert = hilbert_reimp_pdep(pi);
     }
 
     std::array<float, Dim> point;

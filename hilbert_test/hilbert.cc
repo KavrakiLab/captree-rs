@@ -1,4 +1,4 @@
-static const uint_fast32_t MORTON_SLUT_X_256[256] = {
+static const uint_fast32_t MORTON_LUT_X_256[256] = {
     0x00000000, 0x00000001, 0x00000008, 0x00000009, 0x00000040, 0x00000041, 0x00000048, 0x00000049,
     0x00000200, 0x00000201, 0x00000208, 0x00000209, 0x00000240, 0x00000241, 0x00000248, 0x00000249,
     0x00001000, 0x00001001, 0x00001008, 0x00001009, 0x00001040, 0x00001041, 0x00001048, 0x00001049,
@@ -32,7 +32,7 @@ static const uint_fast32_t MORTON_SLUT_X_256[256] = {
     0x00249000, 0x00249001, 0x00249008, 0x00249009, 0x00249040, 0x00249041, 0x00249048, 0x00249049,
     0x00249200, 0x00249201, 0x00249208, 0x00249209, 0x00249240, 0x00249241, 0x00249248, 0x00249249};
 
-static const uint_fast32_t MORTON_SLUT_Y_256[256] = {
+static const uint_fast32_t MORTON_LUT_Y_256[256] = {
     0x00000000, 0x00000002, 0x00000010, 0x00000012, 0x00000080, 0x00000082, 0x00000090, 0x00000092,
     0x00000400, 0x00000402, 0x00000410, 0x00000412, 0x00000480, 0x00000482, 0x00000490, 0x00000492,
     0x00002000, 0x00002002, 0x00002010, 0x00002012, 0x00002080, 0x00002082, 0x00002090, 0x00002092,
@@ -67,7 +67,7 @@ static const uint_fast32_t MORTON_SLUT_Y_256[256] = {
     0x00492400, 0x00492402, 0x00492410, 0x00492412, 0x00492480, 0x00492482, 0x00492490, 0x00492492};
 
 // LUT for Morton3D encode Z
-static const uint_fast32_t MORTON_SLUT_Z_256[256] = {
+static const uint_fast32_t MORTON_LUT_Z_256[256] = {
     0x00000000, 0x00000004, 0x00000020, 0x00000024, 0x00000100, 0x00000104, 0x00000120, 0x00000124,
     0x00000800, 0x00000804, 0x00000820, 0x00000824, 0x00000900, 0x00000904, 0x00000920, 0x00000924,
     0x00004000, 0x00004004, 0x00004020, 0x00004024, 0x00004100, 0x00004104, 0x00004120, 0x00004124,
@@ -114,10 +114,30 @@ constexpr auto hilbert_reimp(const std::array<uint_fast32_t, 3> &p) -> uint_fast
     for (uint_fast32_t i = 32; i > 0; --i)
     {
         uint_fast32_t shift = (i - 1) * 8;
-        answer = answer << 24 | (MORTON_SLUT_Z_256[(z >> shift) & EBMASK] |
-                                 MORTON_SLUT_Y_256[(y >> shift) & EBMASK] |
-                                 MORTON_SLUT_X_256[(x >> shift) & EBMASK]);
+        answer = answer << 24 |
+                 (MORTON_LUT_Z_256[(z >> shift) & EBMASK] | MORTON_LUT_Y_256[(y >> shift) & EBMASK] |
+                  MORTON_LUT_X_256[(x >> shift) & EBMASK]);
     }
 
     return answer;
+}
+
+#include <immintrin.h>
+
+#define MORTON_X_MASK 0x9249249249249249
+#define MORTON_Y_MASK 0x2492492492492492
+#define MORTON_Z_MASK 0x4924924924924924
+
+constexpr auto hilbert_reimp_pdep(const std::array<uint_fast32_t, 3> &p) -> uint_fast32_t
+{
+    // gray encode
+    uint_fast32_t x = p[0];
+    uint_fast32_t y = p[0] ^ p[1];
+    uint_fast32_t z = y ^ p[2];
+
+    uint_fast32_t r = _pdep_u32(x, static_cast<uint_fast32_t>(MORTON_X_MASK)) |
+                      _pdep_u32(y, static_cast<uint_fast32_t>(MORTON_Y_MASK)) |
+                      _pdep_u32(z, static_cast<uint_fast32_t>(MORTON_Z_MASK));
+
+    return r;
 }
