@@ -66,7 +66,6 @@ static const uint_fast32_t MORTON_LUT_Y_256[256] = {
     0x00492000, 0x00492002, 0x00492010, 0x00492012, 0x00492080, 0x00492082, 0x00492090, 0x00492092,
     0x00492400, 0x00492402, 0x00492410, 0x00492412, 0x00492480, 0x00492482, 0x00492490, 0x00492492};
 
-// LUT for Morton3D encode Z
 static const uint_fast32_t MORTON_LUT_Z_256[256] = {
     0x00000000, 0x00000004, 0x00000020, 0x00000024, 0x00000100, 0x00000104, 0x00000120, 0x00000124,
     0x00000800, 0x00000804, 0x00000820, 0x00000824, 0x00000900, 0x00000904, 0x00000920, 0x00000924,
@@ -103,17 +102,17 @@ static const uint_fast32_t MORTON_LUT_Z_256[256] = {
 
 #define EBMASK 0x000000FF
 
-constexpr auto hilbert_reimp(const std::array<uint_fast32_t, 3> &p) -> uint_fast32_t
+constexpr auto hilbert_reimp(std::array<uint_fast32_t, 3> p) -> uint_fast32_t
 {
     // gray encode
-    uint_fast32_t x = p[0];
-    uint_fast32_t y = p[0] ^ p[1];
-    uint_fast32_t z = y ^ p[2];
+    const uint_fast32_t x = p[0];
+    const uint_fast32_t y = p[0] ^ p[1];
+    const uint_fast32_t z = y ^ p[2];
 
     uint_fast32_t answer = 0;
-    for (uint_fast32_t i = 32; i > 0; --i)
+    for (auto i = 32u; i > 0; --i)
     {
-        uint_fast32_t shift = (i - 1) * 8;
+        const auto shift = (i - 1) * 8;
         answer = answer << 24 |
                  (MORTON_LUT_Z_256[(z >> shift) & EBMASK] | MORTON_LUT_Y_256[(y >> shift) & EBMASK] |
                   MORTON_LUT_X_256[(x >> shift) & EBMASK]);
@@ -124,20 +123,16 @@ constexpr auto hilbert_reimp(const std::array<uint_fast32_t, 3> &p) -> uint_fast
 
 #include <immintrin.h>
 
-#define MORTON_X_MASK 0x9249249249249249
-#define MORTON_Y_MASK 0x2492492492492492
-#define MORTON_Z_MASK 0x4924924924924924
+#define MORTON_X_MASK 0x49249249
+#define MORTON_Y_MASK 0x92492492
+#define MORTON_Z_MASK 0x24924924
 
-constexpr auto hilbert_reimp_pdep(const std::array<uint_fast32_t, 3> &p) -> uint_fast32_t
+constexpr auto hilbert_reimp_pdep(std::array<uint_fast32_t, 3> p) -> uint_fast32_t
 {
     // gray encode
-    uint_fast32_t x = p[0];
-    uint_fast32_t y = p[0] ^ p[1];
-    uint_fast32_t z = y ^ p[2];
+    const uint_fast32_t x = p[0];
+    const uint_fast32_t y = p[0] ^ p[1];
+    const uint_fast32_t z = y ^ p[2];
 
-    uint_fast32_t r = _pdep_u32(x, static_cast<uint_fast32_t>(MORTON_X_MASK)) |
-                      _pdep_u32(y, static_cast<uint_fast32_t>(MORTON_Y_MASK)) |
-                      _pdep_u32(z, static_cast<uint_fast32_t>(MORTON_Z_MASK));
-
-    return r;
+    return _pdep_u32(x, MORTON_X_MASK) | _pdep_u32(y, MORTON_Y_MASK) | _pdep_u32(z, MORTON_Z_MASK);
 }

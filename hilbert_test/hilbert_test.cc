@@ -36,8 +36,8 @@ struct PointHilbert
         const PointInt pi = {remap_point(point[0], min, max), remap_point(point[1], min, max),
                              remap_point(point[2], min, max)};
         // hilbert = hilbert::hilbert_distance_by_coords<PointInt, HilbertOrder, Dim>(pi);
-        hilbert = hilbert_reimp(pi);
-        // hilbert = hilbert_reimp_pdep(pi);
+        // hilbert = hilbert_reimp(pi);
+        hilbert = hilbert_reimp_pdep(pi);
     }
 
     std::array<float, Dim> point;
@@ -97,7 +97,7 @@ int main(int argc, char **argv)
     std::vector<PointHilbert> hilbert_points;
     hilbert_points.reserve(raw_pointcloud.size());
 
-        auto start_time = std::chrono::steady_clock::now();
+    auto start_time = std::chrono::steady_clock::now();
 
     for (auto i = 0u; i < raw_pointcloud.size(); ++i)
     {
