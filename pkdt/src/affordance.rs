@@ -3,7 +3,7 @@
 
 use std::{
     hint::unreachable_unchecked,
-    mem::size_of,
+    mem::{size_of, swap, take},
     simd::{LaneCount, Mask, Simd, SimdConstPtr, SimdPartialOrd, SupportedLaneCount},
 };
 
@@ -55,15 +55,15 @@ struct Volume<const D: usize> {
 /// # Generic parameters
 ///
 /// - `D`: The dimension of the space.
-struct BuildStackFrame<'a, const D: usize> {
+struct BuildNode<'a, const D: usize> {
     /// A slice of the set of points belonging to the subtree currently being constructed.
     points: &'a mut [[f32; D]],
     /// The current dimension to split on.
     d: u8,
     /// The current index in the test buffer.
     i: usize,
-    /// The points which might collide with the contents of the current cell.
-    possible_collisions: Vec<[f32; D]>,
+    /// Indexes into the volume set that this tree might collide with.
+    possible_collisions: Vec<usize>,
     /// The prism occupied by this subtree's cell.
     volume: Volume<D>,
 }
@@ -95,83 +95,116 @@ impl<const D: usize> AffordanceTree<D> {
         new_points[..points.len()].copy_from_slice(points);
         let mut affordances = Vec::with_capacity(n2);
         let mut aff_starts = Vec::with_capacity(n2 + 1);
+        aff_starts.push(0);
 
-        let mut stack = Vec::with_capacity(n2.ilog2() as usize);
-        let points_clone = new_points.clone().to_vec();
-        let mut frame = BuildStackFrame {
+        let mut last_row = Vec::with_capacity(n2);
+        last_row.push(BuildNode {
             points: &mut new_points,
             d: 0,
             i: 0,
-            possible_collisions: points_clone,
+            possible_collisions: Vec::new(),
             volume: Volume {
                 lower: [-f32::INFINITY; D],
                 upper: [f32::INFINITY; D],
             },
-        };
+        });
+        let mut next_row = Vec::with_capacity(n2);
 
-        aff_starts.push(0);
-        // Iteratively-transformed construction procedure
         loop {
-            if frame.points.len() <= 1 {
-                let cell_center = frame.points[0];
+            if last_row.len() >= n2 {
+                // breakout case: populate affordance buffer
+                for node in &last_row {
+                    debug_assert_eq!(node.points.len(), 1);
 
-                let center_furthest_distsq = frame.volume.furthest_distsq_to(&cell_center);
-                affordances.push(cell_center);
-                affordances.extend(frame.possible_collisions.into_iter().filter(|pt| {
-                    // check for contacting the volume is already covered
-                    cell_center != *pt // not a duplicate
-                    && {
-                        let closest = frame.volume.closest_point(pt);
-                        rsq_range.0 < distsq(cell_center, closest) // closer to the boundary then the center
-                        && distsq(*pt, closest) < center_furthest_distsq // not always covered by center contacts
+                    let cell_center = node.points[0];
+                    let center_furthest_distsq = node.volume.furthest_distsq_to(&cell_center);
+
+                    affordances.push(node.points[0]);
+                    if center_furthest_distsq > rsq_range.0 {
+                        // center not so close to all its edges that there are possibly-free points
+                        // in the cell
+                        affordances.extend(node.possible_collisions.iter().filter_map(|&idx| {
+                            let pt = last_row[idx].points[0];
+                            let closest = node.volume.closest_point(&pt);
+                            let pt_dist = distsq(closest, pt);
+                            (pt_dist < rsq_range.1 && pt_dist < center_furthest_distsq)
+                                .then_some(pt)
+                        }));
                     }
-                }));
-                aff_starts.push(affordances.len());
-
-                if let Some(f) = stack.pop() {
-                    frame = f;
-                } else {
-                    break;
+                    aff_starts.push(affordances.len());
                 }
-            } else {
-                // split the volume in half
-                tests[frame.i] = median_partition(frame.points, frame.d as usize, rng);
-                let next_dim = (frame.d + 1) % D as u8;
-                let (lhs, rhs) = frame.points.split_at_mut(frame.points.len() / 2);
-                let (low_vol, hi_vol) = frame.volume.split(tests[frame.i], frame.d as usize);
-                let mut lo_afford = frame.possible_collisions.clone();
-                let mut hi_afford = Vec::with_capacity(lo_afford.len());
+                break;
+            }
 
-                // retain only points which might be in the affordance buffer for the split-out
-                // cells
-                lo_afford.retain(|pt| {
-                    if hi_vol.distsq_to(pt) < rsq_range.1
-                        && rsq_range.0 < hi_vol.furthest_distsq_to(pt)
-                    {
-                        hi_afford.push(*pt);
-                    }
-                    low_vol.distsq_to(pt) < rsq_range.1
-                        && rsq_range.0 < low_vol.furthest_distsq_to(pt)
-                });
+            // first pass: construct tests and volumes
+            for prev in last_row.drain(..) {
+                tests[prev.i] = median_partition(prev.points, prev.d as usize, rng);
+                let (lhs, rhs) = prev.points.split_at_mut(prev.points.len() / 2);
+                let (low_vol, hi_vol) = prev.volume.split(tests[prev.i], prev.d as usize);
+                let next_dim = (prev.d + 1) % D as u8;
 
-                // because the stack is FIFO, we must put the left recursion last
-                stack.push(BuildStackFrame {
-                    points: rhs,
-                    d: next_dim,
-                    i: 2 * frame.i + 2,
-                    possible_collisions: hi_afford,
-                    volume: hi_vol,
-                });
-
-                // Save a push/pop operation by directly updating the current frame
-                frame = BuildStackFrame {
+                // HACK: store the previous possible collisions in the left child.
+                // will be fixed up on the second pass
+                next_row.push(BuildNode {
                     points: lhs,
                     d: next_dim,
-                    i: 2 * frame.i + 1,
-                    possible_collisions: lo_afford,
+                    i: 2 * prev.i + 1,
+                    possible_collisions: prev.possible_collisions,
                     volume: low_vol,
-                };
+                });
+
+                next_row.push(BuildNode {
+                    points: rhs,
+                    d: next_dim,
+                    i: 2 * prev.i + 2,
+                    possible_collisions: Vec::new(),
+                    volume: hi_vol,
+                });
             }
+            // second pass: construct affordance volumes
+            for x in (0..next_row.len()).step_by(2) {
+                // must use indices to satisfy Mr. Borrow Checker
+                // x is the index of a left child always
+                let l = x;
+                let r = x + 1;
+
+                let parent_collisions = take(&mut next_row[l].possible_collisions);
+
+                for parent_idx in parent_collisions {
+                    // indices of nodes that the new nodes might collide with
+                    let cl = 2 * parent_idx;
+                    let cr = cl + 1;
+
+                    // TODO: also prune when the max distance between two points in a volume is less
+                    // than sphere radius
+
+                    // check pairwise collisions across each index
+                    if next_row[l].volume.affords(&next_row[cl].volume, rsq_range) {
+                        next_row[l].possible_collisions.push(cl);
+                    }
+
+                    if next_row[r].volume.affords(&next_row[cl].volume, rsq_range) {
+                        next_row[r].possible_collisions.push(cl);
+                    }
+
+                    if next_row[l].volume.affords(&next_row[cr].volume, rsq_range) {
+                        next_row[l].possible_collisions.push(cr);
+                    }
+
+                    if next_row[r].volume.affords(&next_row[cr].volume, rsq_range) {
+                        next_row[r].possible_collisions.push(cr);
+                    }
+                }
+
+                // check if split volumes imply one another
+                // we know they are adjacent, so don't check if they're too close
+                if next_row[l].volume.max_separation(&next_row[r].volume) > rsq_range.1 {
+                    next_row[l].possible_collisions.push(r);
+                    next_row[r].possible_collisions.push(l);
+                }
+            }
+
+            swap(&mut next_row, &mut last_row);
         }
 
         AffordanceTree {
@@ -304,19 +337,6 @@ impl<const D: usize> AffordanceTree<D> {
 
 impl<const D: usize> Volume<D> {
     #[allow(clippy::needless_range_loop)]
-    /// Get the minimum distance squared from all points in this volume to a test point.
-    pub fn distsq_to(&self, point: &[f32; D]) -> f32 {
-        let mut dist = 0.0;
-
-        for d in 0..D {
-            let clamped = clamp(point[d], self.lower[d], self.upper[d]);
-            dist += (point[d] - clamped).powi(2);
-        }
-
-        dist
-    }
-
-    #[allow(clippy::needless_range_loop)]
     /// Get the furthest distance squared from all points in this volume to a test point.
     pub fn furthest_distsq_to(&self, point: &[f32; D]) -> f32 {
         let mut dist = 0.0;
@@ -347,6 +367,37 @@ impl<const D: usize> Volume<D> {
             closest[d] = clamp(query[d], self.lower[d], self.upper[d]);
         }
         closest
+    }
+
+    pub fn affords(&self, other: &Volume<D>, rsq_range: (f32, f32)) -> bool {
+        let mut min_sep = 0.0;
+        let mut max_sep = 0.0;
+        for d in 0..D {
+            if self.lower[d] > other.upper[d] {
+                min_sep += (self.lower[d] - other.upper[d]).powi(2);
+            } else if self.upper[d] < other.lower[d] {
+                min_sep += (other.lower[d] - self.upper[d]).powi(2);
+            }
+            // fall-through case: volumes intersect. just let the separation be 0
+
+            let diff1 = other.upper[d] - self.lower[d];
+            let diff2 = self.upper[d] - other.lower[d];
+
+            max_sep += if diff1 < diff2 { diff2 } else { diff1 }.powi(2);
+        }
+        min_sep < rsq_range.1 && max_sep > rsq_range.0
+    }
+
+    /// Get the maximum L2 distance squared between any two points in this volume.
+    pub fn max_separation(&self, other: &Volume<D>) -> f32 {
+        let mut max_sep = 0.0;
+        for d in 0..D {
+            let diff1 = other.upper[d] - self.lower[d];
+            let diff2 = self.upper[d] - other.lower[d];
+
+            max_sep += if diff1 < diff2 { diff2 } else { diff1 }.powi(2);
+        }
+        max_sep
     }
 }
 
@@ -398,10 +449,10 @@ mod tests {
 
     #[test]
     fn fuzz() {
-        const R_SQ: f32 = 0.0004;
+        const R_SQ: f32 = 0.002;
         let points = [[0.0, 0.1], [0.4, -0.2], [-0.2, -0.1]];
         let mut rng = thread_rng();
-        let t = AffordanceTree::new(&points, (0.0, 0.0008), &mut rng);
+        let t = AffordanceTree::new(&points, (0.0, R_SQ * 2.0), &mut rng);
 
         for _ in 0..10_000 {
             let p = [rng.gen_range(-1.0..1.0), rng.gen_range(-1.0..1.0)];
