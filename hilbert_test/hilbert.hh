@@ -1,3 +1,5 @@
+#include <cstdint>
+#include <array>
 #include <immintrin.h>
 
 static constexpr const std::array<uint_fast32_t, 256> MORTON_LUT_X_256 = {
@@ -107,12 +109,8 @@ static constexpr const uint_fast32_t MORTON_X_MASK = 0x49249249;
 static constexpr const uint_fast32_t MORTON_Y_MASK = 0x92492492;
 static constexpr const uint_fast32_t MORTON_Z_MASK = 0x24924924;
 
-constexpr auto hilbert_reimp(std::array<uint_fast32_t, 3> p) -> uint_fast32_t
+constexpr auto hilbert_reimp(uint_fast32_t x, uint_fast32_t y, uint_fast32_t z) -> uint_fast32_t
 {
-    const uint_fast32_t x = p[0];
-    const uint_fast32_t y = p[1];
-    const uint_fast32_t z = p[2];
-
     uint_fast32_t answer = 0;
     for (auto i = 4u; i > 0; --i)
     {
@@ -125,7 +123,7 @@ constexpr auto hilbert_reimp(std::array<uint_fast32_t, 3> p) -> uint_fast32_t
     return answer;
 }
 
-constexpr auto hilbert_reimp_pdep(std::array<uint_fast32_t, 3> p) -> uint_fast32_t
+constexpr auto hilbert_reimp_pdep(uint_fast32_t x, uint_fast32_t y, uint_fast32_t z) -> uint_fast32_t
 {
-    return _pdep_u32(p[0], MORTON_X_MASK) | _pdep_u32(p[1], MORTON_Y_MASK) | _pdep_u32(p[2], MORTON_Z_MASK);
+    return _pdep_u32(x, MORTON_X_MASK) | _pdep_u32(y, MORTON_Y_MASK) | _pdep_u32(z, MORTON_Z_MASK);
 }

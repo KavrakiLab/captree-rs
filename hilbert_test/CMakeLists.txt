@@ -45,9 +45,11 @@ set(HIGHFIVE_USE_BOOST Off)
 set(HIGHFIVE_USE_INSTALL_DEPS On)
 find_package(HighFive REQUIRED)
 
+find_package(fmt)
+
 set(MORTON_INCLUDE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/libmorton/)
 set(PDQSORT_INCLUDE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/pdqsort)
 
-add_executable(hilbert_test hilbert_test.cc)
-target_include_directories(hilbert_test SYSTEM PRIVATE ${MORTON_INCLUDE_DIRS} ${PDQSORT_INCLUDE_DIRS})
-target_link_libraries(hilbert_test PRIVATE HighFive Eigen3::Eigen)
+add_executable(hdf5_filter hdf5_filter.cc)
+target_include_directories(hdf5_filter SYSTEM PRIVATE ${MORTON_INCLUDE_DIRS} ${PDQSORT_INCLUDE_DIRS})
+target_link_libraries(hdf5_filter PRIVATE HighFive Eigen3::Eigen fmt::fmt)
