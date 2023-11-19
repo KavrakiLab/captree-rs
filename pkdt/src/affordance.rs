@@ -143,6 +143,8 @@ impl<const D: usize> AffordanceTree<D> {
                 let (low_vol, hi_vol) = prev.volume.split(tests[prev.i], prev.d as usize);
                 let next_dim = (prev.d + 1) % D as u8;
 
+                let expected_len = prev.possible_collisions.len() * 2;
+
                 // HACK: store the previous possible collisions in the left child.
                 // will be fixed up on the second pass
                 next_row.push(BuildNode {
@@ -157,7 +159,7 @@ impl<const D: usize> AffordanceTree<D> {
                     points: rhs,
                     d: next_dim,
                     i: 2 * prev.i + 2,
-                    possible_collisions: Vec::new(),
+                    possible_collisions: Vec::with_capacity(expected_len),
                     volume: hi_vol,
                 });
             }
