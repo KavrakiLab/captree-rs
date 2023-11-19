@@ -104,7 +104,7 @@ struct Halton
 };
 
 auto process(const std::vector<Point> &pc, float min_dist, float max_range, Point origin,
-             float halton_threshold) -> std::vector<Point>
+             float pre_halton_threshold, float post_halton_threshold) -> std::vector<Point>
 {
     const auto sqdist = min_dist * min_dist;
     const auto sqrange = max_range * max_range;
@@ -114,12 +114,13 @@ auto process(const std::vector<Point> &pc, float min_dist, float max_range, Poin
     std::vector<std::pair<Point, uint_fast32_t>> hilbert;
     hilbert.reserve(pc.size());
 
-    Halton<3> halton;
+    Halton<3> pre_halton;
 
     for (auto i = 0u; i < pc.size(); ++i)
     {
         auto &&p = pc[i];
-        if (not(halton_threshold > 0.0 and halton.next() < halton_threshold) and sql2(p, origin) < sqrange)
+        if (not(pre_halton_threshold > 0.0 and pre_halton.next() < pre_halton_threshold) and
+            sql2(p, origin) < sqrange)
         {
             auto x = remap_point(p[0], min, max);
             auto y = remap_point(p[1], min, max);
@@ -136,10 +137,13 @@ auto process(const std::vector<Point> &pc, float min_dist, float max_range, Poin
     filtered.reserve(hilbert.size());
     filtered.emplace_back(hilbert[0].first);
 
+    Halton<3> post_halton;
+
     for (auto i = 1u; i < hilbert.size(); ++i)
     {
         auto &&p = hilbert[i].first;
-        if (sql2(p, filtered.back()) > sqdist)
+        if (not(post_halton_threshold > 0.0 and post_halton.next() < post_halton_threshold) and
+            sql2(p, filtered.back()) > sqdist)
         {
             filtered.emplace_back(p);
         }
@@ -171,7 +175,8 @@ int main(int argc, char **argv)
         ("x,origin_x", "x-value of origin", co::value<float>()->default_value("0.0"))                    //
         ("y,origin_y", "y-value of origin", co::value<float>()->default_value("0.0"))                    //
         ("z,origin_z", "z-value of origin", co::value<float>()->default_value("0.0"))                    //
-        ("s,halton", "Halton downsampling threshold", co::value<float>()->default_value("0.0"))          //
+        ("s,halton_pre", "Pre-sort Halton threshold", co::value<float>()->default_value("0.0"))          //
+        ("p,halton_post", "Post-sort Halton threshold", co::value<float>()->default_value("0.0"))        //
         ("h,help", "Print usage")                                                                        //
         ;
 
@@ -215,7 +220,7 @@ int main(int argc, char **argv)
                     result["origin_y"].as<float>(),
                     result["origin_z"].as<float>(),
                 },
-                result["halton"].as<float>());
+                result["halton_pre"].as<float>(), result["halton_post"].as<float>());
     process_timer.click();
 
     auto final_avg_dist = average_adjacent_distance(filtered_pc);
