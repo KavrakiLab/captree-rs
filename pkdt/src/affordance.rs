@@ -127,8 +127,8 @@ impl<const D: usize> AffordanceTree<D> {
                                 .filter(|pt| cell_center != *pt),
                         );
                     }
-                    aff_starts.push(affordances.len());
                 }
+                aff_starts.push(affordances.len());
 
                 if let Some(f) = stack.pop() {
                     frame = f;
@@ -298,9 +298,10 @@ impl<const D: usize> AffordanceTree<D> {
     }
 
     #[must_use]
+    #[allow(clippy::cast_precision_loss)]
     /// Get the average number of affordances per point.
-    pub fn affordance_size(&self) -> usize {
-        self.points.len() / (self.tests.len() + 1)
+    pub fn affordance_size(&self) -> f64 {
+        self.points.len() as f64 / (self.tests.len() + 1) as f64
     }
 }
 
@@ -340,15 +341,6 @@ impl<const D: usize> Volume<D> {
         rhs.lower[dim] = test;
 
         (self, rhs)
-    }
-
-    /// Find the closest point in this volume to `query`.
-    pub fn closest_point(&self, query: &[f32; D]) -> [f32; D] {
-        let mut closest = [f32::NAN; D];
-        for d in 0..D {
-            closest[d] = clamp(query[d], self.lower[d], self.upper[d]);
-        }
-        closest
     }
 }
 
