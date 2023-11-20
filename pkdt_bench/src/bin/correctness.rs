@@ -1,9 +1,11 @@
 use kiddo::SquaredEuclidean;
+use pkdt::AffordanceTree;
 use pkdt_bench::{dist, get_points, make_needles};
 use rand::SeedableRng;
 use rand_chacha::ChaCha20Rng;
 
 const N: usize = 1 << 12;
+const R_SQ: f32 = 0.02 * 0.02;
 
 fn main() {
     let points = get_points(N);
@@ -16,15 +18,27 @@ fn main() {
         kiddo_kdt.add(pt, 0);
     }
 
+    let aff_tree = AffordanceTree::new(
+        &points,
+        (R_SQ - f32::EPSILON, R_SQ + f32::EPSILON),
+        &mut rng,
+    );
+
     let (needles, _) = make_needles::<3, 2>(&mut rng, n_trials);
 
     for (i, &needle) in needles.iter().enumerate() {
-        println!("iter {i}");
+        println!("iter {i}: {needle:?}");
         let exact_kiddo_dist = kiddo_kdt
             .nearest_one::<SquaredEuclidean>(&needle)
             .distance
             .sqrt();
         let exact_dist = dist(kdt.get_point(kdt.query1_exact(needle)), needle);
         assert_eq!(exact_dist, exact_kiddo_dist);
+
+        if exact_dist.powi(2) <= R_SQ {
+            assert!(aff_tree.collides(&needle, R_SQ));
+        } else {
+            assert!(!aff_tree.collides(&needle, R_SQ));
+        }
     }
 }

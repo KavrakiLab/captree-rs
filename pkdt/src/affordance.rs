@@ -115,18 +115,20 @@ impl<const D: usize> AffordanceTree<D> {
             if frame.points.len() <= 1 {
                 let cell_center = frame.points[0];
 
-                let center_furthest_distsq = frame.volume.furthest_distsq_to(&cell_center);
-                affordances.push(cell_center);
-                affordances.extend(frame.possible_collisions.into_iter().filter(|pt| {
-                    // check for contacting the volume is already covered
-                    cell_center != *pt // not a duplicate
-                    && {
-                        let closest = frame.volume.closest_point(pt);
-                        rsq_range.0 < distsq(cell_center, closest) // closer to the boundary then the center
-                        && distsq(*pt, closest) < center_furthest_distsq // not always covered by center contacts
+                if cell_center[0].is_finite() {
+                    affordances.push(cell_center);
+                    let center_furthest_distsq = frame.volume.furthest_distsq_to(&cell_center);
+                    if rsq_range.0 < center_furthest_distsq {
+                        // check for contacting the volume is already covered
+                        affordances.extend(
+                            frame
+                                .possible_collisions
+                                .into_iter()
+                                .filter(|pt| cell_center != *pt),
+                        );
                     }
-                }));
-                aff_starts.push(affordances.len());
+                    aff_starts.push(affordances.len());
+                }
 
                 if let Some(f) = stack.pop() {
                     frame = f;
@@ -409,5 +411,34 @@ mod tests {
             println!("{p:?}; {collides}");
             assert_eq!(collides, t.collides(&p, R_SQ));
         }
+    }
+
+    #[test]
+    /// This test _should_ fail, but it doesn't somehow?
+    fn weird_bounds() {
+        const R_SQ: f32 = 1.0;
+        let points = [
+            [-1.0, 0.0],
+            [0.001, 0.0],
+            [0.0, 0.5],
+            [-1.0, 10.0],
+            [-2.0, 10.0],
+            [-3.0, 10.0],
+            [-0.5, 0.0],
+            [-11.0, 1.0],
+            [-1.0, -0.5],
+            [1.0, 1.0],
+            [2.0, 2.0],
+            [3.0, 3.0],
+            [4.0, 4.0],
+            [5.0, 5.0],
+            [6.0, 6.0],
+            [7.0, 7.0],
+        ];
+        let rsq_range = (R_SQ - f32::EPSILON, R_SQ + f32::EPSILON);
+        let t = AffordanceTree::new(&points, rsq_range, &mut thread_rng());
+        println!("{t:?}");
+
+        assert!(t.collides(&[-0.001, -0.2], 1.0));
     }
 }
