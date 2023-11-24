@@ -266,7 +266,7 @@ impl<const D: usize> AffordanceTree<D> {
         let end_ptrs = points_base.wrapping_add(ends);
 
         // scan through affordance buffer, searching for a collision
-        let mut inbounds = Mask::from_int(Simd::splat(-1)); // whether each of `aff_ptrs` is in a valid affordance buffer
+        let mut inbounds = Mask::splat(true); // whether each of `aff_ptrs` is in a valid affordance buffer
         while inbounds.any() {
             let mut dists_sq = Simd::splat(0.0);
             for center_set in centers {
