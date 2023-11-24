@@ -97,12 +97,11 @@ impl<const D: usize> AffordanceTree<D> {
         let mut aff_starts = Vec::with_capacity(n2 + 1);
 
         let mut stack = Vec::with_capacity(n2.ilog2() as usize);
-        let points_clone = new_points.clone().to_vec();
         let mut frame = BuildStackFrame {
             points: &mut new_points,
             d: 0,
             i: 0,
-            possible_collisions: points_clone,
+            possible_collisions: points.to_vec(),
             volume: Volume {
                 lower: [-f32::INFINITY; D],
                 upper: [f32::INFINITY; D],
@@ -128,7 +127,7 @@ impl<const D: usize> AffordanceTree<D> {
                         );
                     }
                 }
-                aff_starts.push(affordances.len());
+                aff_starts.push(affordances.len() * D);
 
                 if let Some(f) = stack.pop() {
                     frame = f;
@@ -215,7 +214,7 @@ impl<const D: usize> AffordanceTree<D> {
 
         // retrieve affordance buffer location
         let i = test_idx - self.tests.len();
-        let range = self.aff_starts[i]..self.aff_starts[i + 1];
+        let range = self.aff_starts[i] / D..self.aff_starts[i + 1] / D;
 
         // check affordance buffer
         self.points[range]
@@ -259,9 +258,8 @@ impl<const D: usize> AffordanceTree<D> {
         let start_ptrs = Simd::splat((self.aff_starts.as_ref() as *const [usize]).cast::<usize>())
             .wrapping_add(test_idxs)
             .wrapping_sub(Simd::splat(self.tests.len()));
-        let starts = unsafe { Simd::gather_ptr(start_ptrs) } * Simd::splat(D);
-        let ends =
-            unsafe { Simd::gather_ptr(start_ptrs.wrapping_add(Simd::splat(1))) } * Simd::splat(D);
+        let starts = unsafe { Simd::gather_ptr(start_ptrs) };
+        let ends = unsafe { Simd::gather_ptr(start_ptrs.wrapping_add(Simd::splat(1))) };
 
         let points_base = Simd::splat((self.points.as_ref() as *const [[f32; D]]).cast::<f32>());
         let mut aff_ptrs = points_base.wrapping_add(starts);
