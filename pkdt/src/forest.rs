@@ -196,7 +196,7 @@ impl<const D: usize> RandomizedTree<D> {
                 )
             };
             let d = state as usize % D;
-            let cmp_results: Mask<isize, L> = (needles[d].simd_lt(relevant_tests)).into();
+            let cmp_results: Mask<isize, L> = (needles[d].simd_ge(relevant_tests)).into();
 
             // TODO is there a faster way than using a conditional select?
             test_idxs <<= Simd::splat(1);
