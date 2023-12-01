@@ -1,3 +1,7 @@
+#![feature(portable_simd)]
+
+use std::simd::Simd;
+
 use kiddo::SquaredEuclidean;
 use pkdt::AffordanceTree;
 use pkdt_bench::{dist, get_points, make_needles};
@@ -35,10 +39,17 @@ fn main() {
         let exact_dist = dist(kdt.get_point(kdt.query1_exact(needle)), needle);
         assert_eq!(exact_dist, exact_kiddo_dist);
 
+        let simd_needle: [Simd<f32, 16>; 3] = [
+            Simd::splat(needle[0]),
+            Simd::splat(needle[1]),
+            Simd::splat(needle[2]),
+        ];
         if exact_dist.powi(2) <= R_SQ {
             assert!(aff_tree.collides(&needle, R_SQ));
+            assert!(aff_tree.collides_simd(&simd_needle, Simd::splat(R_SQ)))
         } else {
             assert!(!aff_tree.collides(&needle, R_SQ));
+            assert!(!aff_tree.collides_simd(&simd_needle, Simd::splat(R_SQ)))
         }
     }
 }

@@ -247,7 +247,7 @@ impl<const D: usize> AffordanceTree<D> {
             let test_ptrs = Simd::splat((self.tests.as_ref() as *const [f32]).cast::<f32>())
                 .wrapping_offset(test_idxs);
             let relevant_tests: Simd<f32, L> = unsafe { Simd::gather_ptr(test_ptrs) };
-            let cmp_results: Mask<isize, L> = centers[i % D].simd_lt(relevant_tests).into();
+            let cmp_results: Mask<isize, L> = centers[i % D].simd_ge(relevant_tests).into();
 
             // TODO is there a faster way than using a conditional select?
             test_idxs <<= Simd::splat(1);

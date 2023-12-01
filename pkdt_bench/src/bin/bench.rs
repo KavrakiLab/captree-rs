@@ -135,6 +135,7 @@ fn bench_affordance(
             0.01f32.powi(2) - f32::EPSILON,
             0.01f32.powi(2) + f32::EPSILON,
         ),
+        // (0.0f32, 0.02f32.powi(2)),
         rng,
     );
     let toc = Instant::now();
