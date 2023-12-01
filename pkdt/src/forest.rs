@@ -73,7 +73,7 @@ impl<const D: usize, const T: usize> PkdForest<D, T> {
             let indices = tree.mask_query(needles, not_yet_collided);
             let mut dists_sq = Simd::splat(0.0);
             let mut ptrs = Simd::splat((tree.points.as_ref() as *const [[f32; D]]).cast::<f32>())
-                .wrapping_add(indices);
+                .wrapping_offset(indices);
             for needle_set in needles {
                 let diffs =
                     unsafe { Simd::gather_select_ptr(ptrs, not_yet_collided, Simd::splat(0.0)) }
@@ -164,18 +164,18 @@ impl<const D: usize> RandomizedTree<D> {
         self.points[test_idx - self.tests.len()]
     }
 
-    #[allow(clippy::cast_possible_truncation)]
+    #[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
     /// Perform a masked SIMD query of this tree, only determining the location of the nearest
     /// neighbors for points in `mask`.
     fn mask_query<const L: usize>(
         &self,
         needles: &[Simd<f32, L>; D],
         mask: Mask<isize, L>,
-    ) -> Simd<usize, L>
+    ) -> Simd<isize, L>
     where
         LaneCount<L>: SupportedLaneCount,
     {
-        let mut test_idxs: Simd<usize, L> = Simd::splat(0);
+        let mut test_idxs: Simd<isize, L> = Simd::splat(0);
         let mut state = self.seed;
         let n2 = self.tests.len() + 1;
         debug_assert!(n2.is_power_of_two());
@@ -188,18 +188,24 @@ impl<const D: usize> RandomizedTree<D> {
         // Advance the tests forward
         for _ in 0..n2.trailing_zeros() as usize {
             let relevant_tests: Simd<f32, L> = unsafe {
-                Simd::gather_select_unchecked(&self.tests, mask, test_idxs, Simd::splat(f32::NAN))
+                Simd::gather_select_ptr(
+                    Simd::splat((self.tests.as_ref() as *const [f32]).cast())
+                        .wrapping_offset(test_idxs),
+                    mask,
+                    Simd::splat(f32::NAN),
+                )
             };
             let d = state as usize % D;
-            let cmp_results = needles[d].simd_lt(relevant_tests);
+            let cmp_results: Mask<isize, L> = (needles[d].simd_lt(relevant_tests)).into();
 
             // TODO is there a faster way than using a conditional select?
             test_idxs <<= Simd::splat(1);
-            test_idxs += cmp_results.cast().select(Simd::splat(1), Simd::splat(2));
+            test_idxs += Simd::splat(1);
+            test_idxs += cmp_results.to_int() & Simd::splat(1);
             state = xorshift(state);
         }
 
-        test_idxs - Simd::splat(self.tests.len())
+        test_idxs - Simd::splat(self.tests.len() as isize)
     }
 }
 

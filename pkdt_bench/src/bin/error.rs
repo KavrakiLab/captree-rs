@@ -67,7 +67,7 @@ pub fn measure_error<const D: usize, const L: usize>(
                 .sqrt();
             let exact_dist = dist(kdt.get_point(kdt.query1_exact(seq_needle)), seq_needle);
             assert_eq!(exact_dist, exact_kiddo_dist);
-            let approx_dist = dist(seq_needle, kdt.get_point(q1));
+            let approx_dist = dist(seq_needle, kdt.get_point(q1 as usize));
             let rel_error = approx_dist / exact_dist - 1.0;
             println!("{seq_needle:?}\t{exact_dist}\t{approx_dist}\t{rel_error}");
         }

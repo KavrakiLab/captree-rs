@@ -80,16 +80,16 @@ impl<const D: usize> PkdTree<D> {
     }
 
     #[must_use]
-    #[allow(clippy::missing_panics_doc)]
+    #[allow(clippy::missing_panics_doc, clippy::cast_possible_wrap)]
     /// Get the indices of points which are closest to `needles`.
     ///
     /// TODO: refactor this to use `needles` as an out parameter as well, and shove the nearest
     /// points in there?
-    pub fn query<const L: usize>(&self, needles: &[Simd<f32, L>; D]) -> Simd<usize, L>
+    pub fn query<const L: usize>(&self, needles: &[Simd<f32, L>; D]) -> Simd<isize, L>
     where
         LaneCount<L>: SupportedLaneCount,
     {
-        let mut test_idxs: Simd<usize, L> = Simd::splat(0);
+        let mut test_idxs: Simd<isize, L> = Simd::splat(0);
         let n2 = self.tests.len() + 1;
         debug_assert!(n2.is_power_of_two());
 
@@ -101,16 +101,17 @@ impl<const D: usize> PkdTree<D> {
         // Advance the tests forward
         for i in 0..n2.trailing_zeros() as usize {
             let test_ptrs = Simd::splat((self.tests.as_ref() as *const [f32]).cast::<f32>())
-                .wrapping_add(test_idxs);
+                .wrapping_offset(test_idxs);
             let relevant_tests: Simd<f32, L> = unsafe { Simd::gather_ptr(test_ptrs) };
             let cmp_results: Mask<isize, L> = needles[i % D].simd_lt(relevant_tests).into();
 
             // TODO is there a faster way than using a conditional select?
             test_idxs <<= Simd::splat(1);
-            test_idxs += cmp_results.select(Simd::splat(1), Simd::splat(2));
+            test_idxs += Simd::splat(1);
+            test_idxs += cmp_results.to_int() & Simd::splat(1);
         }
 
-        test_idxs - Simd::splat(self.tests.len())
+        test_idxs - Simd::splat(self.tests.len() as isize)
     }
 
     #[must_use]
@@ -143,6 +144,7 @@ impl<const D: usize> PkdTree<D> {
     }
 
     #[must_use]
+    #[allow(clippy::cast_possible_wrap)]
     pub fn might_collide_simd<const L: usize>(
         &self,
         needles: &[Simd<f32, L>; D],
@@ -154,7 +156,7 @@ impl<const D: usize> PkdTree<D> {
         let indices = self.query(needles);
         let mut dists_squared = Simd::splat(0.0);
         let mut ptrs = Simd::splat((self.points.as_ref() as *const [[f32; D]]).cast::<f32>())
-            .wrapping_add(indices * Simd::splat(D));
+            .wrapping_offset(indices * Simd::splat(D as isize));
         for needle_values in needles {
             let deltas = unsafe { Simd::gather_ptr(ptrs) } - needle_values;
             dists_squared += deltas * deltas;
@@ -392,6 +394,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::cast_possible_wrap)]
     fn multi_query() {
         let points = vec![
             [0.1, 0.1],
@@ -406,7 +409,10 @@ mod tests {
         let kdt = PkdTree::new(&points);
 
         let needles = [Simd::from_array([-1.0, 2.0]), Simd::from_array([-1.0, 2.0])];
-        assert_eq!(kdt.query(&needles), Simd::from_array([0, points.len() - 1]));
+        assert_eq!(
+            kdt.query(&needles),
+            Simd::from_array([0, points.len() as isize - 1])
+        );
     }
 
     #[test]
