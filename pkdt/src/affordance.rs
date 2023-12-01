@@ -233,7 +233,7 @@ impl<const D: usize> AffordanceTree<D> {
     where
         LaneCount<L>: SupportedLaneCount,
     {
-        let mut test_idxs: Simd<usize, L> = Simd::splat(0);
+        let mut test_idxs: Simd<isize, L> = Simd::splat(0);
         let n2 = self.tests.len() + 1;
         debug_assert!(n2.is_power_of_two());
 
@@ -245,18 +245,19 @@ impl<const D: usize> AffordanceTree<D> {
         // Advance the tests forward
         for i in 0..n2.trailing_zeros() as usize {
             let test_ptrs = Simd::splat((self.tests.as_ref() as *const [f32]).cast::<f32>())
-                .wrapping_add(test_idxs);
+                .wrapping_offset(test_idxs);
             let relevant_tests: Simd<f32, L> = unsafe { Simd::gather_ptr(test_ptrs) };
             let cmp_results: Mask<isize, L> = centers[i % D].simd_lt(relevant_tests).into();
 
             // TODO is there a faster way than using a conditional select?
             test_idxs <<= Simd::splat(1);
-            test_idxs += cmp_results.select(Simd::splat(1), Simd::splat(2));
+            test_idxs += Simd::splat(1);
+            test_idxs += cmp_results.to_int() & Simd::splat(1);
         }
 
         // retrieve start/end pointers for the affordance buffer
         let start_ptrs = Simd::splat((self.aff_starts.as_ref() as *const [usize]).cast::<usize>())
-            .wrapping_add(test_idxs)
+            .wrapping_offset(test_idxs)
             .wrapping_sub(Simd::splat(self.tests.len()));
         let starts = unsafe { Simd::gather_ptr(start_ptrs) };
         let ends = unsafe { Simd::gather_ptr(start_ptrs.wrapping_add(Simd::splat(1))) };
