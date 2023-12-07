@@ -270,14 +270,12 @@ impl<const D: usize> PkdTree<D> {
 /// median along axis `d`.
 fn median_partition<const D: usize>(points: &mut [[f32; D]], d: usize, rng: &mut impl Rng) -> f32 {
     let median_hi = quick_median(points, d, rng);
-    let (median_lo_idx, median_lo) = points[..points.len() / 2]
+    let median_lo = points[..points.len() / 2]
         .iter()
-        .enumerate()
-        .max_by(|(_, a), (_, b)| a[d].partial_cmp(&b[d]).unwrap())
+        .map(|x| x[d])
+        .max_by(|a, b| a.partial_cmp(b).unwrap())
         .unwrap();
-    let ret = (median_lo[d] + median_hi) / 2.0;
-    points.swap(median_lo_idx, points.len() / 2 - 1);
-    ret
+    (median_lo + median_hi) / 2.0
 }
 
 /// Partition `points[left..right]` about the value at index `pivot_idx` on dimension `d`.
@@ -317,24 +315,17 @@ fn quick_median<const D: usize>(points: &mut [[f32; D]], d: usize, rng: &mut imp
     let mut left = 0;
     let mut right = points.len();
 
-    loop {
-        if right - left < 2 {
-            return points[left][d];
-        }
-
+    while right - left > 1 {
         // index of the first element greater than or equal to the pivot
         let pivot_idx = unsafe { partition(points, left, right, rng.gen_range(left..right), d) };
-        // match k.cmp(&pivot_idx) {
-        //     Ordering::Equal => return points[k][d],
-        //     Ordering::Less => right = pivot_idx,
-        //     Ordering::Greater => left = pivot_idx + 1,
-        // };
         if k < pivot_idx {
             right = pivot_idx;
         } else {
             left = pivot_idx;
         }
     }
+
+    points[left][d]
 }
 
 fn bb_distsq<const D: usize>(point: [f32; D], bb: &[[f32; 2]; D]) -> f32 {
