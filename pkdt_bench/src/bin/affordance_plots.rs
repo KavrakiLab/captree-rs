@@ -28,7 +28,7 @@ fn main() {
             .collect::<Vec<_>>();
 
         let tic = Instant::now();
-        let aff_tree = AffordanceTree::new(&points, RADIUS_RANGE_SQ, &mut rng);
+        let aff_tree = AffordanceTree::<3>::new(&points, RADIUS_RANGE_SQ, &mut rng).unwrap();
         let toc = Instant::now();
         let build_time = toc - tic;
 

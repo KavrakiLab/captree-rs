@@ -129,7 +129,7 @@ fn bench_affordance(
     rng: &mut impl Rng,
 ) {
     let tic = Instant::now();
-    let aff_tree = AffordanceTree::new(
+    let aff_tree = AffordanceTree::<3, _, u64>::new(
         points,
         (
             0.01f32.powi(2) - f32::EPSILON,
@@ -137,7 +137,8 @@ fn bench_affordance(
         ),
         // (0.0f32, 0.02f32.powi(2)),
         rng,
-    );
+    )
+    .unwrap();
     let toc = Instant::now();
     println!("constructed affordance tree in {:?}", toc - tic);
     println!("affordance tree memory: {:?}B", aff_tree.memory_used());

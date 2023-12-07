@@ -22,11 +22,12 @@ fn main() {
         kiddo_kdt.add(pt, 0);
     }
 
-    let aff_tree = AffordanceTree::new(
+    let aff_tree = AffordanceTree::<3>::new(
         &points,
         (R_SQ - f32::EPSILON, R_SQ + f32::EPSILON),
         &mut rng,
-    );
+    )
+    .unwrap();
 
     let (needles, _) = make_needles::<3, 2>(&mut rng, n_trials);
 

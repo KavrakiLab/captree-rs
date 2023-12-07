@@ -9,13 +9,161 @@ use core::{
     mem::size_of,
     simd::{LaneCount, Mask, Simd, SimdConstPtr, SimdPartialOrd, SupportedLaneCount},
 };
+use std::{fmt::Debug, ops::Sub, simd::SimdElement};
 
 mod affordance;
 mod forest;
 
 pub use affordance::AffordanceTree;
+use affordance::Volume;
 pub use forest::PkdForest;
 use rand::{thread_rng, Rng};
+
+pub trait Axis: PartialOrd + Copy + Sub<Output = Self> {
+    const INFINITY: Self;
+    const NEG_INFINITY: Self;
+
+    #[must_use]
+    fn is_finite(self) -> bool;
+
+    #[must_use]
+    fn abs(self) -> Self;
+
+    #[must_use]
+    fn in_between(self, rhs: Self) -> Self;
+}
+
+pub trait AxisSimd<M>: SimdElement + Default {
+    #[must_use]
+    fn any(mask: M) -> bool;
+}
+
+pub trait Index: TryFrom<usize> + TryInto<usize> + Copy {}
+
+pub trait IndexSimd: SimdElement + Default {
+    #[must_use]
+    unsafe fn to_simd_usize<const L: usize>(x: Simd<Self, L>) -> Simd<usize, L>
+    where
+        LaneCount<L>: SupportedLaneCount;
+}
+
+pub trait Distance<A, const K: usize> {
+    type Output: PartialOrd + Copy;
+    const ZERO: Self::Output;
+
+    #[must_use]
+    fn distance(x1: &[A; K], x2: &[A; K]) -> Self::Output;
+
+    #[must_use]
+    fn closest_distance_to_volume(v: &Volume<A, K>, x: &[A; K]) -> Self::Output;
+
+    #[must_use]
+    fn furthest_distance_to_volume(v: &Volume<A, K>, x: &[A; K]) -> Self::Output;
+}
+
+macro_rules! impl_axis {
+    ($t: ty, $tm: ty) => {
+        impl Axis for $t {
+            const INFINITY: Self = <$t>::INFINITY;
+            const NEG_INFINITY: Self = <$t>::NEG_INFINITY;
+
+            fn is_finite(self) -> bool {
+                <$t>::is_finite(self)
+            }
+
+            fn abs(self) -> Self {
+                <$t>::abs(self)
+            }
+
+            fn in_between(self, rhs: Self) -> Self {
+                (self + rhs) / 2.0
+            }
+        }
+
+        impl<const K: usize> Distance<$t, K> for SquaredEuclidean {
+            type Output = $t;
+            const ZERO: Self::Output = 0.0;
+
+            fn distance(x1: &[$t; K], x2: &[$t; K]) -> Self::Output {
+                let mut total = 0.0;
+                for i in 0..K {
+                    total += (x1[i] - x2[i]).powi(2);
+                }
+                total
+            }
+            fn closest_distance_to_volume(v: &Volume<$t, K>, x: &[$t; K]) -> Self::Output {
+                let mut dist = 0.0;
+
+                for d in 0..K {
+                    let clamped = clamp(x[d], v.lower[d], v.upper[d]);
+                    dist += (x[d] - clamped).powi(2);
+                }
+
+                dist
+            }
+            fn furthest_distance_to_volume(v: &Volume<$t, K>, x: &[$t; K]) -> Self::Output {
+                let mut dist = 0.0;
+
+                for d in 0..K {
+                    let lo_diff = (v.lower[d] - x[d]).abs();
+                    let hi_diff = (v.upper[d] - x[d]).abs();
+
+                    dist += if lo_diff < hi_diff { hi_diff } else { lo_diff }.powi(2);
+                }
+
+                dist
+            }
+        }
+
+        impl<const L: usize> AxisSimd<Mask<$tm, L>> for $t
+        where
+            LaneCount<L>: SupportedLaneCount,
+        {
+            fn any(mask: Mask<$tm, L>) -> bool {
+                Mask::<$tm, L>::any(mask)
+            }
+        }
+    };
+}
+
+macro_rules! impl_idx {
+    ($t: ty) => {
+        impl Index for $t {}
+
+        impl IndexSimd for $t {
+            #[must_use]
+            unsafe fn to_simd_usize<const L: usize>(x: Simd<Self, L>) -> Simd<usize, L>
+            where
+                LaneCount<L>: SupportedLaneCount,
+            {
+                x.to_array().map(|a| a.try_into().unwrap_unchecked()).into()
+            }
+        }
+    };
+}
+
+impl_axis!(f32, i32);
+impl_axis!(f64, i64);
+
+impl_idx!(u8);
+impl_idx!(u16);
+impl_idx!(u32);
+impl_idx!(u64);
+impl_idx!(usize);
+
+#[derive(Debug)]
+pub struct SquaredEuclidean;
+
+/// Clamp a floating-point number.
+fn clamp<A: PartialOrd>(x: A, min: A, max: A) -> A {
+    if x < min {
+        min
+    } else if x > max {
+        max
+    } else {
+        x
+    }
+}
 
 #[derive(Clone, Debug, PartialEq)]
 /// A power-of-two KD-tree.
@@ -268,20 +416,24 @@ impl<const D: usize> PkdTree<D> {
 
 /// Calculate the "true" median (halfway between two midpoints) and partition `points` about said
 /// median along axis `d`.
-fn median_partition<const D: usize>(points: &mut [[f32; D]], d: usize, rng: &mut impl Rng) -> f32 {
+fn median_partition<A: Axis, const D: usize>(
+    points: &mut [[A; D]],
+    d: usize,
+    rng: &mut impl Rng,
+) -> A {
     let median_hi = quick_median(points, d, rng);
     let median_lo = points[..points.len() / 2]
         .iter()
         .map(|x| x[d])
         .max_by(|a, b| a.partial_cmp(b).unwrap())
         .unwrap();
-    (median_lo + median_hi) / 2.0
+    median_lo.in_between(median_hi)
 }
 
 /// Partition `points[left..right]` about the value at index `pivot_idx` on dimension `d`.
 /// Returns the resultant index of the pivot in the array.
-unsafe fn partition<const D: usize>(
-    points: &mut [[f32; D]],
+unsafe fn partition<A: PartialOrd + Copy, const D: usize>(
+    points: &mut [[A; D]],
     left: usize,
     right: usize,
     pivot_idx: usize,
@@ -310,7 +462,11 @@ unsafe fn partition<const D: usize>(
 
 /// Calculate the median of `points` by dimension `d` and partition `points` so that all points
 /// below the median come before it in the buffer.
-fn quick_median<const D: usize>(points: &mut [[f32; D]], d: usize, rng: &mut impl Rng) -> f32 {
+fn quick_median<A: Copy + PartialOrd, const D: usize>(
+    points: &mut [[A; D]],
+    d: usize,
+    rng: &mut impl Rng,
+) -> A {
     let k = points.len() / 2;
     let mut left = 0;
     let mut right = points.len();
