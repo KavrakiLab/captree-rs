@@ -199,6 +199,7 @@ where
     }
 
     #[must_use]
+    #[allow(clippy::needless_pass_by_value)]
     /// Determine whether a point in this tree is within a distance of `radius` to `center`.
     ///
     /// # Panics
@@ -257,6 +258,7 @@ where
     }
 }
 
+#[allow(clippy::mismatching_type_param_order)]
 impl<A, I, const K: usize> AffordanceTree<K, A, I, SquaredEuclidean, A>
 where
     I: IndexSimd,
@@ -299,9 +301,10 @@ where
         let start_ptrs = Simd::splat((self.aff_starts.as_ref() as *const [I]).cast::<I>())
             .wrapping_offset(test_idxs)
             .wrapping_sub(Simd::splat(self.tests.len()));
-        let starts = unsafe { I::to_simd_usize(Simd::gather_ptr(start_ptrs)) };
-        let ends =
-            unsafe { I::to_simd_usize(Simd::gather_ptr(start_ptrs.wrapping_add(Simd::splat(1)))) };
+        let starts = unsafe { I::to_simd_usize_unchecked(Simd::gather_ptr(start_ptrs)) };
+        let ends = unsafe {
+            I::to_simd_usize_unchecked(Simd::gather_ptr(start_ptrs.wrapping_add(Simd::splat(1))))
+        };
 
         let points_base = Simd::splat((self.points.as_ref() as *const [[A; K]]).cast::<A>());
         let mut aff_ptrs = points_base.wrapping_add(starts);

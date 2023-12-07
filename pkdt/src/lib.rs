@@ -42,7 +42,13 @@ pub trait Index: TryFrom<usize> + TryInto<usize> + Copy {}
 
 pub trait IndexSimd: SimdElement + Default {
     #[must_use]
-    unsafe fn to_simd_usize<const L: usize>(x: Simd<Self, L>) -> Simd<usize, L>
+    /// Convert a SIMD array of `Self` to a SIMD array of `usize`, without checking that each
+    /// element is valid.
+    ///
+    /// # Safety
+    ///
+    /// This function is only safe if all values of `x` are valid when converted to a `usize`.
+    unsafe fn to_simd_usize_unchecked<const L: usize>(x: Simd<Self, L>) -> Simd<usize, L>
     where
         LaneCount<L>: SupportedLaneCount;
 }
@@ -132,7 +138,7 @@ macro_rules! impl_idx {
 
         impl IndexSimd for $t {
             #[must_use]
-            unsafe fn to_simd_usize<const L: usize>(x: Simd<Self, L>) -> Simd<usize, L>
+            unsafe fn to_simd_usize_unchecked<const L: usize>(x: Simd<Self, L>) -> Simd<usize, L>
             where
                 LaneCount<L>: SupportedLaneCount,
             {
