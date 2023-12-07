@@ -1,7 +1,6 @@
 //! Efficient, branchless nearest-neighbor trees for robot collision checking.
 
 #![feature(portable_simd)]
-#![feature(slice_swap_unchecked)]
 #![warn(clippy::pedantic)]
 
 use core::{
@@ -459,7 +458,7 @@ unsafe fn partition<A: PartialOrd + Copy, const D: usize>(
         }
 
         if i < j {
-            points.swap_unchecked(i, j);
+            points.swap(i, j);
         } else {
             return j + 1;
         }
