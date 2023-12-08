@@ -281,17 +281,21 @@ where
             unsafe { unreachable_unchecked() };
         }
 
+        let mut k = 0;
+
         // Advance the tests forward
-        for i in 0..n2.trailing_zeros() as usize {
+        for _ in 0..n2.trailing_zeros() as usize {
             let test_ptrs = Simd::splat((self.tests.as_ref() as *const [A]).cast::<A>())
                 .wrapping_offset(test_idxs);
             let relevant_tests: Simd<A, L> = unsafe { Simd::gather_ptr(test_ptrs) };
-            let cmp_results: Mask<isize, L> = centers[i % K].simd_ge(relevant_tests).into();
+            let cmp_results: Mask<isize, L> = centers[k % K].simd_ge(relevant_tests).into();
 
             // TODO is there a faster way than using a conditional select?
             test_idxs <<= Simd::splat(1);
             test_idxs += Simd::splat(1);
             test_idxs += cmp_results.to_int() & Simd::splat(1);
+
+            k = (k + 1) % K;
         }
 
         // retrieve start/end pointers for the affordance buffer
