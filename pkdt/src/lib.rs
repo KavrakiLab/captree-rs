@@ -435,36 +435,6 @@ fn median_partition<A: Axis, const D: usize>(
     median_lo.in_between(median_hi)
 }
 
-/// Partition `points[left..right]` about the value at index `pivot_idx` on dimension `d`.
-/// Returns the resultant index of the pivot in the array.
-unsafe fn partition<A: PartialOrd + Copy, const D: usize>(
-    points: &mut [[A; D]],
-    left: usize,
-    right: usize,
-    pivot_idx: usize,
-    d: usize,
-) -> usize {
-    let pivot_val = points[pivot_idx][d];
-    let mut i = left.overflowing_sub(1).0;
-    let mut j = right;
-    loop {
-        i = i.overflowing_add(1).0;
-        while *points.get_unchecked(i).get_unchecked(d) < pivot_val {
-            i += 1;
-        }
-        j -= 1;
-        while *points.get_unchecked(j).get_unchecked(d) > pivot_val {
-            j -= 1;
-        }
-
-        if i < j {
-            points.swap(i, j);
-        } else {
-            return j + 1;
-        }
-    }
-}
-
 /// Calculate the median of `points` by dimension `d` and partition `points` so that all points
 /// below the median come before it in the buffer.
 fn quick_median<A: Copy + PartialOrd, const D: usize>(
@@ -478,7 +448,28 @@ fn quick_median<A: Copy + PartialOrd, const D: usize>(
 
     while right - left > 1 {
         // index of the first element greater than or equal to the pivot
-        let pivot_idx = unsafe { partition(points, left, right, rng.gen_range(left..right), d) };
+        let pivot_val = points[rng.gen_range(left..right)][d];
+        let mut i = left.overflowing_sub(1).0;
+        let mut j = right;
+        let pivot_idx = unsafe {
+            loop {
+                i = i.overflowing_add(1).0;
+                while *points.get_unchecked(i).get_unchecked(d) < pivot_val {
+                    i += 1;
+                }
+                j -= 1;
+                while *points.get_unchecked(j).get_unchecked(d) > pivot_val {
+                    j -= 1;
+                }
+
+                if i < j {
+                    points.swap(i, j);
+                } else {
+                    break j + 1;
+                }
+            }
+        };
+
         if k < pivot_idx {
             right = pivot_idx;
         } else {
@@ -624,15 +615,5 @@ mod tests {
         for p0 in &points1[points1.len() / 2..] {
             assert!(p0[0] >= median);
         }
-    }
-
-    #[test]
-    #[allow(clippy::float_cmp)]
-    fn just_test_partition() {
-        let mut points = vec![[1.5], [2.0], [1.0]];
-        let pivot_idx = unsafe { partition(&mut points, 0, 3, 1, 0) };
-        assert_eq!(pivot_idx, 2);
-        assert_eq!(points[2], [2.0]);
-        println!("{points:?}");
     }
 }
