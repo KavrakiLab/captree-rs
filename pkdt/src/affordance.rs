@@ -209,23 +209,20 @@ where
     /// TODO: implement real error handling.
     pub fn collides(&self, center: &[A; K], radius: R) -> bool {
         // ball mus be in the rsq range
-        assert!(self.rsq_range.0 <= radius);
-        assert!(radius <= self.rsq_range.1);
+        debug_assert!(self.rsq_range.0 <= radius);
+        debug_assert!(radius <= self.rsq_range.1);
 
         let n2 = self.tests.len() + 1;
-        assert!(n2.is_power_of_two());
+        debug_assert!(n2.is_power_of_two());
 
         // forward pass through the tree
         let mut test_idx = 0;
-        for i in 0..n2.trailing_zeros() as usize {
-            // println!("current idx: {test_idx}");
-            let add = if center[i % K] < (self.tests[test_idx]) {
-                1
-            } else {
-                2
-            };
-            test_idx <<= 1;
-            test_idx += add;
+        let mut k = 0;
+        for _ in 0..n2.trailing_zeros() as usize {
+            test_idx = 2 * test_idx
+                + 1
+                + usize::from(center[k] >= unsafe { *self.tests.get_unchecked(test_idx) });
+            k = (k + 1) % K;
         }
 
         // retrieve affordance buffer location
