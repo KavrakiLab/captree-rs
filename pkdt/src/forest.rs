@@ -3,7 +3,7 @@
 use std::{
     hint::unreachable_unchecked,
     mem::MaybeUninit,
-    simd::{LaneCount, Mask, Simd, SimdConstPtr, SimdPartialOrd, SupportedLaneCount},
+    simd::{cmp::SimdPartialOrd, ptr::SimdConstPtr, LaneCount, Mask, Simd, SupportedLaneCount},
 };
 
 use rand::Rng;

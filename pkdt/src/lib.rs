@@ -6,9 +6,13 @@
 use core::{
     hint::unreachable_unchecked,
     mem::size_of,
-    simd::{LaneCount, Mask, Simd, SimdConstPtr, SimdPartialOrd, SupportedLaneCount},
+    simd::{LaneCount, Mask, Simd, SupportedLaneCount},
 };
-use std::{fmt::Debug, ops::Sub, simd::SimdElement};
+use std::{
+    fmt::Debug,
+    ops::Sub,
+    simd::{cmp::SimdPartialOrd, ptr::SimdConstPtr, SimdElement},
+};
 
 mod affordance;
 mod forest;

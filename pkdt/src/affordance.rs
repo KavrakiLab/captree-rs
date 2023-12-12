@@ -7,7 +7,9 @@ use std::{
     mem::size_of,
     ops::{AddAssign, Mul, Sub},
     simd::{
-        LaneCount, Mask, Simd, SimdConstPtr, SimdPartialEq, SimdPartialOrd, SupportedLaneCount,
+        cmp::{SimdPartialEq, SimdPartialOrd},
+        ptr::SimdConstPtr,
+        LaneCount, Mask, Simd, SupportedLaneCount,
     },
 };
 
