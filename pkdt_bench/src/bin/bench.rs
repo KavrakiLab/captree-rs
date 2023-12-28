@@ -11,6 +11,8 @@ use rand_chacha::ChaCha20Rng;
 const N: usize = 1 << 12;
 const L: usize = 16;
 
+const R_SQ: f32 = 0.08 * 0.08;
+
 fn main() {
     let mut points = get_points(N);
     let mut rng = ChaCha20Rng::seed_from_u64(2707);
@@ -44,7 +46,7 @@ fn main() {
 
     let tic = Instant::now();
     for needle in &seq_needles {
-        black_box(kiddo_kdt.within_unsorted::<SquaredEuclidean>(needle, 0.01f32.powi(2)));
+        black_box(kiddo_kdt.within_unsorted::<SquaredEuclidean>(needle, R_SQ));
     }
     let toc = Instant::now();
     let kiddo_range_time = toc.duration_since(tic);
@@ -57,7 +59,7 @@ fn main() {
 
     let tic = Instant::now();
     for needle in &seq_needles {
-        black_box(kiddo_kdt.nearest_one::<SquaredEuclidean>(needle).distance < 0.01f32.powi(2));
+        black_box(kiddo_kdt.nearest_one::<SquaredEuclidean>(needle).distance < R_SQ);
     }
     let toc = Instant::now();
     let kiddo_exact_time = toc.duration_since(tic);
@@ -82,7 +84,7 @@ fn main() {
 
     let tic = Instant::now();
     for &needle in &seq_needles {
-        black_box(kdt.might_collide(needle, 0.0001));
+        black_box(kdt.might_collide(needle,R_SQ));
     }
     let toc = Instant::now();
     let seq_time = toc.duration_since(tic);
@@ -105,7 +107,7 @@ fn main() {
 
     let tic = Instant::now();
     for needle in &simd_needles {
-        black_box(kdt.might_collide_simd::<L>(needle, Simd::splat(0.0001)));
+        black_box(kdt.might_collide_simd::<L>(needle, Simd::splat(R_SQ)));
     }
     let toc = Instant::now();
     let simd_time = toc.duration_since(tic);
@@ -132,8 +134,8 @@ fn bench_affordance(
     let aff_tree = AffordanceTree::<3, _, u64>::new(
         points,
         (
-            0.01f32.powi(2) - f32::EPSILON,
-            0.01f32.powi(2) + f32::EPSILON,
+           R_SQ,
+            R_SQ,
         ),
         // (0.0f32, 0.02f32.powi(2)),
         rng,
@@ -146,7 +148,7 @@ fn bench_affordance(
 
     let tic = Instant::now();
     for needle in seq_needles {
-        black_box(aff_tree.collides(needle, 0.0001));
+        black_box(aff_tree.collides(needle, R_SQ));
     }
     let toc = Instant::now();
     let aff_time = toc - tic;
@@ -158,7 +160,7 @@ fn bench_affordance(
 
     let tic = Instant::now();
     for simd_needle in simd_needles {
-        black_box(aff_tree.collides_simd(simd_needle, Simd::splat(0.0001)));
+        black_box(aff_tree.collides_simd(simd_needle, Simd::splat(R_SQ)));
     }
     let toc = Instant::now();
     let aff_time = toc - tic;
@@ -179,7 +181,7 @@ fn bench_forest<const T: usize>(
 
     let tic = Instant::now();
     for needle in simd_needles {
-        black_box(forest.might_collide_simd(needle, Simd::splat(0.01f32.powi(2))));
+        black_box(forest.might_collide_simd(needle, Simd::splat(R_SQ)));
     }
     let toc = Instant::now();
     println!(
