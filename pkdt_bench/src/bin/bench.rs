@@ -11,7 +11,8 @@ use rand_chacha::ChaCha20Rng;
 const N: usize = 1 << 12;
 const L: usize = 16;
 
-const R_SQ: f32 = 0.08 * 0.08;
+const R_SQ: f32 = 0.02 * 0.02;
+const R_SQ_RANGE: (f32, f32) = (0.012 * 0.012, 0.08 * 0.08);
 
 fn main() {
     let mut points = get_points(N);
@@ -84,7 +85,7 @@ fn main() {
 
     let tic = Instant::now();
     for &needle in &seq_needles {
-        black_box(kdt.might_collide(needle,R_SQ));
+        black_box(kdt.might_collide(needle, R_SQ));
     }
     let toc = Instant::now();
     let seq_time = toc.duration_since(tic);
@@ -99,11 +100,6 @@ fn main() {
     bench_forest::<3>(&points, &simd_needles, &mut rng);
     bench_forest::<4>(&points, &simd_needles, &mut rng);
     bench_forest::<5>(&points, &simd_needles, &mut rng);
-    // bench_forest::<6>(&points, &simd_needles, &mut rng);
-    // bench_forest::<7>(&points, &simd_needles, &mut rng);
-    // bench_forest::<8>(&points, &simd_needles, &mut rng);
-    // bench_forest::<9>(&points, &simd_needles, &mut rng);
-    // bench_forest::<10>(&points, &simd_needles, &mut rng);
 
     let tic = Instant::now();
     for needle in &simd_needles {
@@ -133,10 +129,7 @@ fn bench_affordance(
     let tic = Instant::now();
     let aff_tree = AffordanceTree::<3, _, u64>::new(
         points,
-        (
-           R_SQ,
-            R_SQ,
-        ),
+        (R_SQ_RANGE.0, R_SQ_RANGE.1),
         // (0.0f32, 0.02f32.powi(2)),
         rng,
     )

@@ -430,28 +430,12 @@ fn median_partition<A: Axis, const D: usize>(
     d: usize,
     rng: &mut impl Rng,
 ) -> A {
-    let median_hi = quick_median(points, d, rng);
-    let median_lo = points[..points.len() / 2]
-        .iter()
-        .map(|x| x[d])
-        .max_by(|a, b| a.partial_cmp(b).unwrap())
-        .unwrap();
-    median_lo.in_between(median_hi)
-}
-
-/// Calculate the median of `points` by dimension `d` and partition `points` so that all points
-/// below the median come before it in the buffer.
-fn quick_median<A: Copy + PartialOrd, const D: usize>(
-    points: &mut [[A; D]],
-    d: usize,
-    rng: &mut impl Rng,
-) -> A {
     let k = points.len() / 2;
     let mut left = 0;
     let mut right = points.len();
 
     while right - left > 1 {
-        // index of the first element greater than or equal to the pivot
+        // Hoare partition
         let pivot_val = points[rng.gen_range(left..right)][d];
         let mut i = left.overflowing_sub(1).0;
         let mut j = right;
@@ -481,7 +465,13 @@ fn quick_median<A: Copy + PartialOrd, const D: usize>(
         }
     }
 
-    points[left][d]
+    let median_hi = points[left][d];
+    let median_lo = points[..points.len() / 2]
+        .iter()
+        .map(|x| x[d])
+        .max_by(|a, b| a.partial_cmp(b).unwrap())
+        .unwrap();
+    median_lo.in_between(median_hi)
 }
 
 fn bb_distsq<const D: usize>(point: [f32; D], bb: &[[f32; 2]; D]) -> f32 {
@@ -590,18 +580,6 @@ mod tests {
         assert_eq!(kdt.query1([2.5]), 1);
         assert_eq!(kdt.query1([3.5]), 2);
         assert_eq!(kdt.query1([4.5]), 2);
-    }
-
-    #[test]
-    #[allow(clippy::float_cmp)]
-    fn medians() {
-        let points = vec![[1.0], [2.0], [1.5]];
-
-        let mut points1 = points.clone();
-        let median = quick_median(&mut points1, 0, &mut thread_rng());
-        println!("{points1:?}");
-        assert_eq!(median, 1.5);
-        assert_eq!(points1, vec![[1.0], [1.5], [2.0]]);
     }
 
     #[test]

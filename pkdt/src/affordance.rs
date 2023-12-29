@@ -24,6 +24,13 @@ use crate::{median_partition, Axis, AxisSimd, Distance, Index, IndexSimd, Square
 /// # Generic parameters
 ///
 /// - `K`: The dimension of the space.
+/// - `A`: The value of the axes of each point.
+///        This should typically be `f32` or `f64`.
+/// - `I`: The index integer.
+///        This should generally be an unsigned integer, such as `usize` or `u32`.
+/// - `D`: The distance metric.
+/// - `R`: The output value of the distance metric.
+///        This should typically be `f32` or `f64`.
 pub struct AffordanceTree<const K: usize, A = f32, I = usize, D = SquaredEuclidean, R = f32> {
     /// The test values for determining which part of the tree to enter.
     ///
@@ -93,27 +100,27 @@ where
     /// The output of construction will be the same independent of the RNG, but the process to
     /// construct the tree may vary with the provided RNG.
     ///
-    /// This function will return `None` if there are too many points to be indexed by `I`.
-    ///
-    /// # Panics
-    ///
-    /// This function will panic if `K` is greater than or equal to 255.
+    /// This function will return `None` if there are too many points to be indexed by `I`, or if `K` is greater than `255`
     pub fn new(points: &[[A; K]], rsq_range: (R, R), rng: &mut impl Rng) -> Option<Self> {
-        assert!(K < u8::MAX as usize);
+        if K >= u8::MAX as usize {
+            return None;
+        }
 
         let n2 = points.len().next_power_of_two();
 
         let mut tests = vec![A::INFINITY; n2 - 1].into_boxed_slice();
 
         // hack: just pad with infinity to make it a power of 2
-        let mut new_points = vec![[A::INFINITY; K]; n2].into_boxed_slice();
-        new_points[..points.len()].copy_from_slice(points);
+        let mut points2 = vec![[A::INFINITY; K]; n2].into_boxed_slice();
+        points2[..points.len()].copy_from_slice(points);
         let mut affordances = Vec::with_capacity(n2);
         let mut aff_starts = Vec::with_capacity(n2 + 1);
 
         let mut stack = Vec::with_capacity(n2.ilog2() as usize);
+
+        // current frame - used as a CPS transformation to prevent excessive push/pop to stack
         let mut frame = BuildStackFrame {
-            points: &mut new_points,
+            points: &mut points2,
             d: 0,
             i: 0,
             possible_collisions: points.to_vec(),
@@ -152,10 +159,11 @@ where
                 }
             } else {
                 // split the volume in half
-                tests[frame.i] = median_partition(frame.points, frame.d as usize, rng);
+                let test = median_partition(frame.points, frame.d as usize, rng);
+                tests[frame.i] = test;
                 let next_dim = (frame.d + 1) % K as u8;
                 let (lhs, rhs) = frame.points.split_at_mut(frame.points.len() / 2);
-                let (low_vol, hi_vol) = frame.volume.split(tests[frame.i], frame.d as usize);
+                let (low_vol, hi_vol) = frame.volume.split(test, frame.d as usize);
                 let mut lo_afford = frame.possible_collisions.clone();
                 let mut hi_afford = Vec::with_capacity(lo_afford.len());
 
@@ -384,6 +392,22 @@ mod tests {
 
         let q0 = [0.003_265_380_9, 0.106_527_805];
         assert!(t.collides(&q0, 0.0004));
+    }
+
+    #[test]
+    fn three_d() {
+        let points = [
+            [0.0; 3],
+            [0.1, -1.1, 0.5],
+            [-0.2, -0.3, 0.25],
+            [0.1, -1.1, 0.5],
+        ];
+
+        let t = AffordanceTree::<3>::new(&points, (0.0, 0.04), &mut thread_rng()).unwrap();
+
+        println!("{t:?}");
+        assert!(t.collides(&[0.0, 0.1, 0.0], 0.011));
+        assert!(!t.collides(&[0.0, 0.1, 0.0], 0.05 * 0.05));
     }
 
     #[test]
