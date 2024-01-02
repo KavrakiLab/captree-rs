@@ -278,7 +278,7 @@ where
     /// Get the total memory used (stack + heap) by this structure, measured in bytes.
     pub fn memory_used(&self) -> usize {
         size_of::<Self>()
-            + (self.affordances.len() * size_of::<AffordedPoint<K, A, R>>()) * size_of::<A>()
+            + self.affordances.len() * size_of::<AffordedPoint<K, A, R>>()
             + self.aff_starts.len() * size_of::<I>()
     }
 
@@ -353,6 +353,7 @@ where
             let aff_dist_to_cell =
                 unsafe { Simd::gather_select_ptr(aff_ptrs, inbounds, Simd::splat(A::INFINITY)) };
             inbounds &= aff_dist_to_cell <= radii;
+            aff_ptrs = aff_ptrs.wrapping_add(Simd::splat(1));
 
             if !inbounds.any() {
                 return false;
