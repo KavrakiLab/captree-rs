@@ -280,7 +280,7 @@ where
         Simd<A, L>:
             SimdPartialOrd + Sub<Output = Simd<A, L>> + Mul<Output = Simd<A, L>> + AddAssign,
         Mask<isize, L>: From<<Simd<A, L> as SimdPartialEq>::Mask>,
-        A: AxisSimd<<Simd<A, L> as SimdPartialEq>::Mask>,
+        A: Axis + AxisSimd<<Simd<A, L> as SimdPartialEq>::Mask>,
     {
         let mut test_idxs: Simd<isize, L> = Simd::splat(0);
         let n2 = self.tests.len() + 1;
@@ -326,7 +326,9 @@ where
         while inbounds.any() {
             let mut dists_sq = Simd::splat(SquaredEuclidean::ZERO);
             for center_set in centers {
-                let vals = unsafe { Simd::gather_select_ptr(aff_ptrs, inbounds, *center_set) };
+                let vals = unsafe {
+                    Simd::gather_select_ptr(aff_ptrs, inbounds, Simd::splat(A::INFINITY))
+                };
                 let diffs = *center_set - vals;
                 dists_sq += diffs * diffs;
                 aff_ptrs = aff_ptrs.wrapping_add(Simd::splat(1));
