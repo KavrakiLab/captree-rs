@@ -324,18 +324,14 @@ where
             let relevant_tests: Simd<A, L> = unsafe { Simd::gather_ptr(test_ptrs) };
             let cmp_results: Mask<isize, L> = centers[k % K].simd_ge(relevant_tests).into();
 
-            // TODO is there a faster way than using a conditional select?
-            test_idxs <<= Simd::splat(1);
-            test_idxs += Simd::splat(1);
-            test_idxs += cmp_results.to_int() & Simd::splat(1);
-
+            let one = Simd::splat(1);
+            test_idxs = (test_idxs << one) + one + (cmp_results.to_int() & Simd::splat(1));
             k = (k + 1) % K;
         }
 
         // retrieve start/end pointers for the affordance buffer
-        let start_ptrs = Simd::splat(self.aff_starts.as_ptr())
-            .wrapping_offset(test_idxs)
-            .wrapping_sub(Simd::splat(self.tests.len()));
+        let start_ptrs = Simd::splat(self.aff_starts.as_ptr().wrapping_sub(self.tests.len()))
+            .wrapping_offset(test_idxs);
         let starts = unsafe { I::to_simd_usize_unchecked(Simd::gather_ptr(start_ptrs)) };
         let ends = unsafe {
             I::to_simd_usize_unchecked(Simd::gather_ptr(start_ptrs.wrapping_add(Simd::splat(1))))
@@ -347,9 +343,9 @@ where
 
         // scan through affordance buffer, searching for a collision
         let mut inbounds = Mask::splat(true); // whether each of `aff_ptrs` is in a valid affordance buffer
+        let infty = Simd::splat(A::INFINITY);
         while inbounds.any() {
-            let aff_dist_to_cell =
-                unsafe { Simd::gather_select_ptr(aff_ptrs, inbounds, Simd::splat(A::INFINITY)) };
+            let aff_dist_to_cell = unsafe { Simd::gather_select_ptr(aff_ptrs, inbounds, infty) };
             inbounds &= aff_dist_to_cell <= radii;
             aff_ptrs = aff_ptrs.wrapping_add(Simd::splat(1));
 
@@ -359,9 +355,7 @@ where
 
             let mut dists_sq = Simd::splat(SquaredEuclidean::ZERO);
             for center_set in centers {
-                let vals = unsafe {
-                    Simd::gather_select_ptr(aff_ptrs, inbounds, Simd::splat(A::INFINITY))
-                };
+                let vals = unsafe { Simd::gather_select_ptr(aff_ptrs, inbounds, infty) };
                 let diffs = *center_set - vals;
                 dists_sq += diffs * diffs;
                 aff_ptrs = aff_ptrs.wrapping_add(Simd::splat(1));
