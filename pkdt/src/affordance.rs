@@ -362,7 +362,7 @@ where
             }
 
             // is one ball in collision with a point?
-            if A::any(dists_sq.simd_lt(radii)) {
+            if A::any(dists_sq.simd_le(radii)) {
                 return true;
             }
 
