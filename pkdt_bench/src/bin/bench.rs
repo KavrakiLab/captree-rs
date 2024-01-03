@@ -11,7 +11,7 @@ use rand_chacha::ChaCha20Rng;
 const N: usize = 1 << 12;
 const L: usize = 16;
 
-const R_SQ: f32 = 0.02 * 0.02;
+const R_SQ: f32 = 0.08 * 0.08;
 const R_SQ_RANGE: (f32, f32) = (0.012 * 0.012, 0.08 * 0.08);
 
 fn main() {

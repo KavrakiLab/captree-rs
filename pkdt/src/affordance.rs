@@ -167,7 +167,7 @@ where
                         a.distance_to_cell.partial_cmp(&b.distance_to_cell).unwrap()
                     });
                 }
-                aff_starts.push((affordances.len() * K).try_into().ok()?);
+                aff_starts.push((affordances.len()).try_into().ok()?);
 
                 if let Some(f) = stack.pop() {
                     frame = f;
@@ -256,8 +256,8 @@ where
         let i = test_idx - self.tests.len();
         let range = unsafe {
             // SAFETY: The conversion worked the first way.
-            self.aff_starts[i].try_into().unwrap_unchecked() / K
-                ..self.aff_starts[i + 1].try_into().unwrap_unchecked() / K
+            self.aff_starts[i].try_into().unwrap_unchecked()
+                ..self.aff_starts[i + 1].try_into().unwrap_unchecked()
         };
 
         // check affordance buffer
@@ -320,8 +320,7 @@ where
 
         // Advance the tests forward
         for _ in 0..n2.trailing_zeros() as usize {
-            let test_ptrs = Simd::splat((self.tests.as_ref() as *const [A]).cast::<A>())
-                .wrapping_offset(test_idxs);
+            let test_ptrs = Simd::splat(self.tests.as_ptr()).wrapping_offset(test_idxs);
             let relevant_tests: Simd<A, L> = unsafe { Simd::gather_ptr(test_ptrs) };
             let cmp_results: Mask<isize, L> = centers[k % K].simd_ge(relevant_tests).into();
 
@@ -334,7 +333,7 @@ where
         }
 
         // retrieve start/end pointers for the affordance buffer
-        let start_ptrs = Simd::splat((self.aff_starts.as_ref() as *const [I]).cast::<I>())
+        let start_ptrs = Simd::splat(self.aff_starts.as_ptr())
             .wrapping_offset(test_idxs)
             .wrapping_sub(Simd::splat(self.tests.len()));
         let starts = unsafe { I::to_simd_usize_unchecked(Simd::gather_ptr(start_ptrs)) };
@@ -342,10 +341,9 @@ where
             I::to_simd_usize_unchecked(Simd::gather_ptr(start_ptrs.wrapping_add(Simd::splat(1))))
         };
 
-        let points_base =
-            Simd::splat((self.affordances.as_ref() as *const [AffordedPoint<K, A, A>]).cast::<A>());
-        let mut aff_ptrs = points_base.wrapping_add(starts);
-        let end_ptrs = points_base.wrapping_add(ends);
+        let points_base = Simd::splat(self.affordances.as_ref().as_ptr());
+        let mut aff_ptrs = points_base.wrapping_add(starts).cast::<A>();
+        let end_ptrs = points_base.wrapping_add(ends).cast::<A>();
 
         // scan through affordance buffer, searching for a collision
         let mut inbounds = Mask::splat(true); // whether each of `aff_ptrs` is in a valid affordance buffer
