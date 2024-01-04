@@ -82,7 +82,7 @@ struct BuildStackFrame<'a, A, const K: usize> {
     /// The current index in the test buffer.
     i: usize,
     /// The points which might collide with the contents of the current cell.
-    possible_collisions: Vec<u32>,
+    possible_collisions: Vec<[A; K]>,
     /// The prism occupied by this subtree's cell.
     volume: Volume<A, K>,
 }
@@ -128,7 +128,7 @@ where
             points: &mut points2,
             d: 0,
             i: 0,
-            possible_collisions: (0..points.len() as u32).collect(),
+            possible_collisions: Vec::new(),
             volume: Volume {
                 lower: [A::NEG_INFINITY; K],
                 upper: [A::INFINITY; K],
@@ -151,30 +151,21 @@ where
                         D::furthest_distance_to_volume(&frame.volume, &cell_center);
                     if rsq_range.0 < center_furthest_distsq {
                         // check for contacting the volume is already covered
-                        affordances.extend(frame.possible_collisions.into_iter().filter_map(
-                            |pt_id| {
-                                let pt = points[pt_id as usize];
-                                (pt != cell_center).then_some(AffordedPoint {
-                                    distance_to_cell: D::closest_distance_to_volume(
-                                        &frame.volume,
-                                        &pt,
-                                    ),
-                                    point: pt,
-                                })
-                            },
-                        ));
+                        affordances.extend(frame.possible_collisions.into_iter().map(|pt| {
+                            AffordedPoint {
+                                distance_to_cell: D::closest_distance_to_volume(&frame.volume, &pt),
+                                point: pt,
+                            }
+                        }));
                     }
                     affordances[start..].sort_unstable_by(|a, b| {
                         a.distance_to_cell.partial_cmp(&b.distance_to_cell).unwrap()
                     });
                 }
-                aff_starts.push((affordances.len()).try_into().ok()?);
+                aff_starts.push(affordances.len().try_into().ok()?);
 
-                if let Some(f) = stack.pop() {
-                    frame = f;
-                } else {
-                    break;
-                }
+                let Some(f) = stack.pop() else { break };
+                frame = f;
             } else {
                 // split the volume in half
                 let test = median_partition(frame.points, frame.d as usize, rng);
@@ -183,20 +174,18 @@ where
                 let (lhs, rhs) = frame.points.split_at_mut(frame.points.len() / 2);
                 let (low_vol, hi_vol) = frame.volume.split(test, frame.d as usize);
                 let mut lo_afford = frame.possible_collisions.clone();
-                let mut hi_afford = Vec::with_capacity(lo_afford.len());
+                let mut hi_afford = Vec::<[A; K]>::with_capacity(lo_afford.len());
 
                 // retain only points which might be in the affordance buffer for the split-out
                 // cells
-                lo_afford.retain(|&pt_id| {
-                    let pt = &points[pt_id as usize];
-                    if D::closest_distance_to_volume(&hi_vol, pt) < rsq_range.1
-                        && rsq_range.0 < D::furthest_distance_to_volume(&hi_vol, pt)
-                    {
-                        hi_afford.push(pt_id);
+                lo_afford.retain(|pt| {
+                    if hi_vol.affords::<D>(pt, &rsq_range) {
+                        hi_afford.push(*pt);
                     }
-                    D::closest_distance_to_volume(&low_vol, pt) < rsq_range.1
-                        && rsq_range.0 < D::furthest_distance_to_volume(&low_vol, pt)
+                    low_vol.affords::<D>(pt, &rsq_range)
                 });
+                lo_afford.extend(rhs.iter().filter(|pt| low_vol.affords::<D>(pt, &rsq_range)));
+                hi_afford.extend(lhs.iter().filter(|pt| hi_vol.affords::<D>(pt, &rsq_range)));
 
                 // because the stack is FIFO, we must put the left recursion last
                 stack.push(BuildStackFrame {
@@ -386,6 +375,11 @@ where
         rhs.lower[dim] = test;
 
         (self, rhs)
+    }
+
+    fn affords<D: Distance<A, K>>(&self, pt: &[A; K], rsq_range: &(D::Output, D::Output)) -> bool {
+        D::closest_distance_to_volume(self, pt) < rsq_range.1
+            && rsq_range.0 < D::furthest_distance_to_volume(self, pt)
     }
 }
 
