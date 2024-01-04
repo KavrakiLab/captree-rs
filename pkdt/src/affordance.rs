@@ -82,7 +82,7 @@ struct BuildStackFrame<'a, A, const K: usize> {
     /// The current index in the test buffer.
     i: usize,
     /// The points which might collide with the contents of the current cell.
-    possible_collisions: Vec<[A; K]>,
+    possible_collisions: Vec<u32>,
     /// The prism occupied by this subtree's cell.
     volume: Volume<A, K>,
 }
@@ -128,7 +128,7 @@ where
             points: &mut points2,
             d: 0,
             i: 0,
-            possible_collisions: points.to_vec(),
+            possible_collisions: (0..points.len() as u32).collect(),
             volume: Volume {
                 lower: [A::NEG_INFINITY; K],
                 upper: [A::INFINITY; K],
@@ -152,7 +152,8 @@ where
                     if rsq_range.0 < center_furthest_distsq {
                         // check for contacting the volume is already covered
                         affordances.extend(frame.possible_collisions.into_iter().filter_map(
-                            |pt| {
+                            |pt_id| {
+                                let pt = points[pt_id as usize];
                                 (pt != cell_center).then_some(AffordedPoint {
                                     distance_to_cell: D::closest_distance_to_volume(
                                         &frame.volume,
@@ -186,11 +187,12 @@ where
 
                 // retain only points which might be in the affordance buffer for the split-out
                 // cells
-                lo_afford.retain(|pt| {
+                lo_afford.retain(|&pt_id| {
+                    let pt = &points[pt_id as usize];
                     if D::closest_distance_to_volume(&hi_vol, pt) < rsq_range.1
                         && rsq_range.0 < D::furthest_distance_to_volume(&hi_vol, pt)
                     {
-                        hi_afford.push(*pt);
+                        hi_afford.push(pt_id);
                     }
                     D::closest_distance_to_volume(&low_vol, pt) < rsq_range.1
                         && rsq_range.0 < D::furthest_distance_to_volume(&low_vol, pt)
