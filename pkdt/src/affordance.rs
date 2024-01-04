@@ -151,12 +151,27 @@ where
                         D::furthest_distance_to_volume(&frame.volume, &cell_center);
                     if rsq_range.0 < center_furthest_distsq {
                         // check for contacting the volume is already covered
-                        affordances.extend(frame.possible_collisions.into_iter().map(|pt| {
-                            AffordedPoint {
-                                distance_to_cell: D::closest_distance_to_volume(&frame.volume, &pt),
-                                point: pt,
-                            }
-                        }));
+                        affordances.extend(frame.possible_collisions.into_iter().filter_map(
+                            |pt| {
+                                let mut closest_point = pt;
+                                let mut is_on_corner = true;
+                                for k in 0..K {
+                                    if pt[k] < frame.volume.lower[k] {
+                                        closest_point[k] = frame.volume.lower[k];
+                                    } else if frame.volume.upper[k] < pt[k] {
+                                        closest_point[k] = frame.volume.upper[k];
+                                    } else {
+                                        is_on_corner = false;
+                                    }
+                                }
+                                (!is_on_corner
+                                    || rsq_range.0 < D::distance(&cell_center, &closest_point))
+                                .then(|| AffordedPoint {
+                                    distance_to_cell: D::distance(&closest_point, &pt),
+                                    point: pt,
+                                })
+                            },
+                        ));
                     }
                     affordances[start..].sort_unstable_by(|a, b| {
                         a.distance_to_cell.partial_cmp(&b.distance_to_cell).unwrap()
@@ -170,10 +185,9 @@ where
                 // split the volume in half
                 let test = median_partition(frame.points, frame.d as usize, rng);
                 tests[frame.i] = test;
-                let next_dim = (frame.d + 1) % K as u8;
                 let (lhs, rhs) = frame.points.split_at_mut(frame.points.len() / 2);
                 let (low_vol, hi_vol) = frame.volume.split(test, frame.d as usize);
-                let mut lo_afford = frame.possible_collisions.clone();
+                let mut lo_afford = frame.possible_collisions;
                 let mut hi_afford = Vec::<[A; K]>::with_capacity(lo_afford.len());
 
                 // retain only points which might be in the affordance buffer for the split-out
@@ -186,6 +200,8 @@ where
                 });
                 lo_afford.extend(rhs.iter().filter(|pt| low_vol.affords::<D>(pt, &rsq_range)));
                 hi_afford.extend(lhs.iter().filter(|pt| hi_vol.affords::<D>(pt, &rsq_range)));
+
+                let next_dim = (frame.d + 1) % K as u8;
 
                 // because the stack is FIFO, we must put the left recursion last
                 stack.push(BuildStackFrame {
