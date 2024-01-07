@@ -2,6 +2,7 @@
 
 #![feature(portable_simd)]
 #![warn(clippy::pedantic)]
+#![feature(is_sorted)]
 
 use core::{
     hint::unreachable_unchecked,
@@ -10,7 +11,7 @@ use core::{
 };
 use std::{
     fmt::Debug,
-    ops::Sub,
+    ops::{Add, Sub},
     simd::{cmp::SimdPartialOrd, ptr::SimdConstPtr, SimdElement},
 };
 
@@ -22,7 +23,7 @@ use affordance::Volume;
 pub use forest::PkdForest;
 use rand::{thread_rng, Rng};
 
-pub trait Axis: PartialOrd + Copy + Sub<Output = Self> {
+pub trait Axis: PartialOrd + Copy + Sub<Output = Self> + Add<Output = Self> {
     const INFINITY: Self;
     const NEG_INFINITY: Self;
 

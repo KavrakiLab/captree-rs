@@ -92,12 +92,12 @@ where
     A: Axis,
     I: Index,
     D: Distance<A, K, Output = R>,
-    R: PartialOrd,
+    R: PartialOrd + Copy,
 {
     #[must_use]
     #[allow(clippy::cast_possible_truncation, clippy::float_cmp)]
     /// Construct a new affordance tree containing all the points in `points`.
-    /// `rsq_range` is a `(minimum, maximum)` pair containing the lower and upper bound on the
+    /// `r_range` is a `(minimum, maximum)` pair containing the lower and upper bound on the
     /// radius of the balls which will be queried against the tree.
     /// `rng` is a random number generator.
     /// Although the results of the tree are deterministic after construction, the construction
@@ -106,7 +106,7 @@ where
     /// construct the tree may vary with the provided RNG.
     ///
     /// This function will return `None` if there are too many points to be indexed by `I`, or if `K` is greater than `255`
-    pub fn new(points: &[[A; K]], rsq_range: (R, R), rng: &mut impl Rng) -> Option<Self> {
+    pub fn new(points: &[[A; K]], r_range: (R, R), rng: &mut impl Rng) -> Option<Self> {
         if K >= u8::MAX as usize {
             return None;
         }
@@ -149,7 +149,7 @@ where
                     let start = affordances.len();
                     let center_furthest_distsq =
                         D::furthest_distance_to_volume(&frame.volume, &cell_center);
-                    if rsq_range.0 < center_furthest_distsq {
+                    if r_range.0 < center_furthest_distsq {
                         // check for contacting the volume is already covered
                         affordances.extend(frame.possible_collisions.into_iter().filter_map(
                             |pt| {
@@ -165,7 +165,7 @@ where
                                     }
                                 }
                                 (!is_on_corner
-                                    || rsq_range.0 < D::distance(&cell_center, &closest_point))
+                                    || r_range.0 < D::distance(&cell_center, &closest_point))
                                 .then(|| AffordedPoint {
                                     distance_to_cell: D::distance(&closest_point, &pt),
                                     point: pt,
@@ -193,13 +193,13 @@ where
                 // retain only points which might be in the affordance buffer for the split-out
                 // cells
                 lo_afford.retain(|pt| {
-                    if hi_vol.affords::<D>(pt, &rsq_range) {
+                    if hi_vol.affords::<D>(pt, &r_range) {
                         hi_afford.push(*pt);
                     }
-                    low_vol.affords::<D>(pt, &rsq_range)
+                    low_vol.affords::<D>(pt, &r_range)
                 });
-                lo_afford.extend(rhs.iter().filter(|pt| low_vol.affords::<D>(pt, &rsq_range)));
-                hi_afford.extend(lhs.iter().filter(|pt| hi_vol.affords::<D>(pt, &rsq_range)));
+                lo_afford.extend(rhs.iter().filter(|pt| low_vol.affords::<D>(pt, &r_range)));
+                hi_afford.extend(lhs.iter().filter(|pt| hi_vol.affords::<D>(pt, &r_range)));
 
                 let next_dim = (frame.d + 1) % K as u8;
 
@@ -225,7 +225,7 @@ where
 
         Some(AffordanceTree {
             tests,
-            rsq_range,
+            rsq_range: r_range,
             aff_starts: aff_starts.into_boxed_slice(),
             affordances: affordances.into_boxed_slice(),
             _phantom: PhantomData,
