@@ -105,7 +105,8 @@ where
     /// The output of construction will be the same independent of the RNG, but the process to
     /// construct the tree may vary with the provided RNG.
     ///
-    /// This function will return `None` if there are too many points to be indexed by `I`, or if `K` is greater than `255`
+    /// This function will return `None` if there are too many points to be indexed by `I`, or if
+    /// `K` is greater than `255`.
     pub fn new(points: &[[A; K]], r_range: (R, R), rng: &mut impl Rng) -> Option<Self> {
         if K >= u8::MAX as usize {
             return None;

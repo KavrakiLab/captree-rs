@@ -2,7 +2,6 @@
 
 #![feature(portable_simd)]
 #![warn(clippy::pedantic)]
-#![feature(is_sorted)]
 
 use core::{
     hint::unreachable_unchecked,
