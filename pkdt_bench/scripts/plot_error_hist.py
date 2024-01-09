@@ -14,6 +14,7 @@ errors.csv must have anything in column 0, true distance in column 1, estimated 
 import csv
 import matplotlib.pyplot as plt
 import sys
+import numpy as np
 
 csv_fname = sys.argv[1]
 rel_errs = []
@@ -27,53 +28,12 @@ with open(csv_fname) as f:
         abs_errs.append(float(row[2]) - float(row[1]))
         approx_dists.append(float(row[2]))
 
-# PDFs
+h, edges = np.histogram(abs_errs, bins=400)
+cy = np.cumsum(h / np.sum(h))
 
-plt.hist(rel_errs, bins=400, density=True, stacked=True)
-plt.xlabel("Relative distance error")
+plt.plot(edges[:-1], cy)
+plt.fill_between( edges[:-1], cy, step="pre", alpha=0.4)
+plt.xlabel("Absolute distance error (m)")
 plt.ylabel("Frequency")
-plt.title(f"PDF of relative error distribution for {csv_fname}")
-plt.show()
-
-
-plt.hist(abs_errs, bins=400, density=True, stacked=True)
-plt.xlabel("Absolute distance error")
-plt.ylabel("Frequency")
-plt.title(f"PDF of absolute error distribution for {csv_fname}")
-plt.show()
-
-
-# CDFs
-
-plt.hist(
-    rel_errs,
-    bins=400,
-    density=True,
-    cumulative=True,
-    label="CDF",
-    histtype="step",
-    alpha=0.8,
-    color="k",
-)
-
-plt.xlabel("Relative distance error")
-plt.ylabel("Frequency")
-plt.title(f"CDF of relative error distribution for {csv_fname}")
-plt.show()
-
-
-plt.hist(
-    abs_errs,
-    bins=400,
-    density=True,
-    cumulative=True,
-    label="CDF",
-    histtype="step",
-    alpha=0.8,
-    color="k",
-)
-
-plt.xlabel("Absolute distance error")
-plt.ylabel("Frequency")
-plt.title(f"CDF of Absolute error distribution for {csv_fname}")
+plt.title(f"CDF of forward tree absolute error distribution")
 plt.show()

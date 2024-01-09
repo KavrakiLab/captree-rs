@@ -34,6 +34,15 @@ fn main() {
         Instant::now().duration_since(tic)
     );
 
+    println!("generating mutable kdt");
+    let tic = Instant::now();
+    let mut mutable_kdt = kiddo::KdTree::<f32, 3>::new();
+    mutable_kdt.extend(points.iter().map(|&a| (a, 0)));
+    println!(
+        "done generating mutable kdt in {:?}",
+        Instant::now().duration_since(tic)
+    );
+
     println!("forward tree memory: {:?}B", kdt.memory_used());
 
     println!("testing for performance...");
@@ -69,6 +78,24 @@ fn main() {
         "completed kiddo (exact) in {:?} ({:?}/q)",
         kiddo_exact_time,
         kiddo_exact_time / seq_needles.len() as u32
+    );
+
+    let tic = Instant::now();
+    for needle in &seq_needles {
+        black_box(
+            mutable_kdt
+                .within_unsorted_iter::<SquaredEuclidean>(needle, R_SQ)
+                .next()
+                .is_some(),
+        );
+    }
+    let toc = Instant::now();
+    let mutable_kiddo_time = toc.duration_since(tic);
+
+    println!(
+        "completed mutable kiddo in {:?} ({:?}/q)",
+        mutable_kiddo_time,
+        mutable_kiddo_time / seq_needles.len() as u32
     );
 
     // let tic = Instant::now();
