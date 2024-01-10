@@ -9,8 +9,9 @@ use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 
 const L: usize = 16;
+const RADIUS: f32 = 0.05;
 const RADIUS_RANGE_SQ: (f32, f32) = (0.0001, 0.0004);
-const RADIUS_SQ: f32 = 0.00025;
+const RADIUS_SQ: f32 = RADIUS * RADIUS;
 const N_TRIALS: usize = 100_000;
 
 fn main() {
@@ -41,7 +42,7 @@ fn main() {
 
         let tic = Instant::now();
         for needle in simd_needles {
-            black_box(aff_tree.collides_simd(&needle, Simd::splat(RADIUS_SQ)));
+            black_box(aff_tree.collides_simd(&needle, Simd::splat(RADIUS)));
         }
         let toc = Instant::now();
         let simd_time = toc - tic;

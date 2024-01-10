@@ -9,7 +9,8 @@ use rand::SeedableRng;
 use rand_chacha::ChaCha20Rng;
 
 const N: usize = 1 << 12;
-const R_SQ: f32 = 0.02 * 0.02;
+const R: f32 = 0.02;
+const R_SQ: f32 = R * R;
 
 fn main() {
     let points = get_points(N);
@@ -45,12 +46,12 @@ fn main() {
             Simd::splat(needle[1]),
             Simd::splat(needle[2]),
         ];
-        if exact_dist.powi(2) <= R_SQ {
+        if exact_dist <= R {
             assert!(aff_tree.collides(&needle, R_SQ));
-            assert!(aff_tree.collides_simd(&simd_needle, Simd::splat(R_SQ)))
+            assert!(aff_tree.collides_simd(&simd_needle, Simd::splat(R)))
         } else {
             assert!(!aff_tree.collides(&needle, R_SQ));
-            assert!(!aff_tree.collides_simd(&simd_needle, Simd::splat(R_SQ)))
+            assert!(!aff_tree.collides_simd(&simd_needle, Simd::splat(R)))
         }
     }
 }

@@ -11,7 +11,8 @@ use rand_chacha::ChaCha20Rng;
 const N: usize = 1 << 12;
 const L: usize = 16;
 
-const R_SQ: f32 = 0.08 * 0.08;
+const R: f32 = 0.08;
+const R_SQ: f32 = R * R;
 const R_SQ_RANGE: (f32, f32) = (0.012 * 0.012, 0.08 * 0.08);
 
 fn main() {
@@ -180,7 +181,7 @@ fn bench_affordance(
 
     let tic = Instant::now();
     for simd_needle in simd_needles {
-        black_box(aff_tree.collides_simd(simd_needle, Simd::splat(R_SQ)));
+        black_box(aff_tree.collides_simd(simd_needle, Simd::splat(R)));
     }
     let toc = Instant::now();
     let aff_time = toc - tic;

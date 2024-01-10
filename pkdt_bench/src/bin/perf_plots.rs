@@ -18,7 +18,8 @@ const N_TRIALS: usize = 100_000;
 const L: usize = 8;
 
 const RADIUS_RANGE_SQ: (f32, f32) = (0.0001, 0.0004);
-const QUERY_RADIUS_SQ: f32 = 0.00025;
+const QUERY_RADIUS: f32 = 0.05;
+const QUERY_RADIUS_SQ: f32 = QUERY_RADIUS * QUERY_RADIUS;
 
 fn main() -> Result<(), Box<dyn Error>> {
     let mut f_construct = File::create("construct_time.csv")?;
@@ -77,7 +78,7 @@ fn do_row(
     });
     let (_, afftree_total_simd_q_time) = time(|| {
         for simd_needle in &simd_needles {
-            black_box(afftree.collides_simd(simd_needle, Simd::splat(QUERY_RADIUS_SQ)));
+            black_box(afftree.collides_simd(simd_needle, Simd::splat(QUERY_RADIUS)));
         }
     });
 

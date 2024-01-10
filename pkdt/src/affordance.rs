@@ -61,6 +61,7 @@ struct AffordedPoint<const K: usize, A, R> {
     point: [A; K],
 }
 
+#[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq)]
 /// A prismatic bounding volume.
 pub struct Volume<A, const K: usize> {
@@ -304,6 +305,7 @@ impl<A, I, const K: usize> AffordanceTree<K, A, I, SquaredEuclidean, A>
 where
     I: IndexSimd,
     SquaredEuclidean: Distance<A, K, Output = A>,
+    A: std::fmt::Debug,
 {
     #[must_use]
     /// Determine whether any sphere in the list of provided spheres intersects a point in this
@@ -338,9 +340,33 @@ where
             k = (k + 1) % K;
         }
 
+        let zs = test_idxs - Simd::splat(self.tests.len() as isize);
+
+        let mut inbounds = Mask::splat(true);
+
+        let mut aabb_ptrs = Simd::splat(self.aabbs.as_ptr()).wrapping_offset(zs).cast();
+
+        unsafe {
+            for center in centers {
+                inbounds &=
+                    Simd::gather_select_ptr(aabb_ptrs, inbounds, Simd::splat(A::NEG_INFINITY))
+                        - radii
+                        <= *center;
+                aabb_ptrs = aabb_ptrs.wrapping_add(Simd::splat(1));
+            }
+            for center in centers {
+                inbounds &=
+                    Simd::gather_select_ptr(aabb_ptrs, inbounds, Simd::splat(A::NEG_INFINITY))
+                        >= *center - radii;
+                aabb_ptrs = aabb_ptrs.wrapping_add(Simd::splat(1));
+            }
+        }
+        if !inbounds.any() {
+            return false;
+        }
+
         // retrieve start/end pointers for the affordance buffer
-        let start_ptrs = Simd::splat(self.aff_starts.as_ptr().wrapping_sub(self.tests.len()))
-            .wrapping_offset(test_idxs);
+        let start_ptrs = Simd::splat(self.aff_starts.as_ptr()).wrapping_offset(zs);
         let starts = unsafe { I::to_simd_usize_unchecked(Simd::gather_ptr(start_ptrs)) };
         let ends = unsafe {
             I::to_simd_usize_unchecked(Simd::gather_ptr(start_ptrs.wrapping_add(Simd::splat(1))))
@@ -351,11 +377,11 @@ where
         let end_ptrs = points_base.wrapping_add(ends).cast::<A>();
 
         // scan through affordance buffer, searching for a collision
-        let mut inbounds = Mask::splat(true); // whether each of `aff_ptrs` is in a valid affordance buffer
+        let radii_sq = radii * radii;
         let infty = Simd::splat(A::INFINITY);
         while inbounds.any() {
             let aff_dist_to_cell = unsafe { Simd::gather_select_ptr(aff_ptrs, inbounds, infty) };
-            inbounds &= aff_dist_to_cell <= radii;
+            inbounds &= aff_dist_to_cell <= radii_sq;
             aff_ptrs = aff_ptrs.wrapping_add(Simd::splat(1));
 
             if !inbounds.any() {
@@ -371,7 +397,7 @@ where
             }
 
             // is one ball in collision with a point?
-            if A::any(dists_sq.simd_le(radii)) {
+            if A::any(dists_sq.simd_le(radii_sq)) {
                 return true;
             }
 
