@@ -174,8 +174,10 @@ where
                             },
                         ));
                     }
-                    affordances[start..].sort_unstable_by(|a, b| {
-                        a.distance_to_cell.partial_cmp(&b.distance_to_cell).unwrap()
+                    affordances[start..].sort_unstable_by(|a, b| unsafe {
+                        a.distance_to_cell
+                            .partial_cmp(&b.distance_to_cell)
+                            .unwrap_unchecked()
                     });
                 }
                 aff_starts.push(affordances.len().try_into().ok()?);
