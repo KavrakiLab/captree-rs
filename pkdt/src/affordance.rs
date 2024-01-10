@@ -50,6 +50,7 @@ pub struct AffordanceTree<const K: usize, A = f32, I = usize, D = SquaredEuclide
     /// for the sake of branchless computation.
     aff_starts: Box<[I]>,
     affordances: Box<[AffordedPoint<K, A, R>]>,
+    aabbs: Box<[Volume<A, K>]>,
     _phantom: PhantomData<D>,
 }
 
@@ -137,11 +138,16 @@ where
         };
 
         aff_starts.push(0.try_into().ok()?);
+        let mut aabbs = Vec::with_capacity(n2);
         // Iteratively-transformed construction procedure
         loop {
             if frame.points.len() <= 1 {
                 let cell_center = frame.points[0];
 
+                let mut aabb = Volume {
+                    lower: cell_center,
+                    upper: cell_center,
+                };
                 if cell_center[0].is_finite() {
                     affordances.push(AffordedPoint {
                         distance_to_cell: D::ZERO,
@@ -153,6 +159,7 @@ where
                     if r_range.0 < center_furthest_distsq {
                         // check for contacting the volume is already covered
                         affordances.extend(frame.possible_collisions.into_iter().map(|pt| {
+                            aabb.insert(&pt);
                             AffordedPoint {
                                 distance_to_cell: D::closest_distance_to_volume(&frame.volume, &pt),
                                 point: pt,
@@ -166,6 +173,7 @@ where
                     });
                 }
                 aff_starts.push(affordances.len().try_into().ok()?);
+                aabbs.push(aabb);
 
                 let Some(f) = stack.pop() else { break };
                 frame = f;
@@ -216,6 +224,7 @@ where
             rsq_range: r_range,
             aff_starts: aff_starts.into_boxed_slice(),
             affordances: affordances.into_boxed_slice(),
+            aabbs: aabbs.into_boxed_slice(),
             _phantom: PhantomData,
         })
     }
@@ -249,6 +258,11 @@ where
 
         // retrieve affordance buffer location
         let i = test_idx - self.tests.len();
+        let aabb = unsafe { self.aabbs.get_unchecked(i) };
+        if D::closest_distance_to_volume(&aabb, center) > radius {
+            return false;
+        }
+
         let range = unsafe {
             // SAFETY: The conversion worked the first way.
             self.aff_starts[i].try_into().unwrap_unchecked()
@@ -384,6 +398,21 @@ where
     fn affords<D: Distance<A, K>>(&self, pt: &[A; K], rsq_range: &(D::Output, D::Output)) -> bool {
         D::closest_distance_to_volume(self, pt) < rsq_range.1
             && rsq_range.0 < D::furthest_distance_to_volume(self, pt)
+    }
+
+    fn insert(&mut self, point: &[A; K]) {
+        self.lower
+            .iter_mut()
+            .zip(&mut self.upper)
+            .zip(point)
+            .for_each(|((l, h), &x)| {
+                if *l > x {
+                    *l = x;
+                }
+                if x > *h {
+                    *h = x;
+                }
+            });
     }
 }
 
