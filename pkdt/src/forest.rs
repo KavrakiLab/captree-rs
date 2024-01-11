@@ -1,14 +1,13 @@
 //! Power-of-two k-d forests.
 
 use std::{
-    hint::unreachable_unchecked,
     mem::MaybeUninit,
     simd::{cmp::SimdPartialOrd, ptr::SimdConstPtr, LaneCount, Mask, Simd, SupportedLaneCount},
 };
 
 use rand::Rng;
 
-use crate::{distsq, median_partition};
+use crate::{distsq, forward_pass, median_partition};
 
 #[derive(Clone, Debug)]
 struct RandomizedTree<const D: usize> {
@@ -42,10 +41,10 @@ impl<const D: usize, const T: usize> PkdForest<D, T> {
     /// # Panics
     ///
     /// This function will panic if `T` is 0.
-    pub fn query1(&self, needle: [f32; D]) -> ([f32; D], f32) {
+    pub fn approx_nearest(&self, needle: [f32; D]) -> ([f32; D], f32) {
         self.test_seqs
             .iter()
-            .map(|t| t.query1(needle))
+            .map(|t| t.points[forward_pass(&t.tests, &needle)])
             .map(|point| (point, distsq(needle, point)))
             .min_by(|(_, d1), (_, d2)| d1.partial_cmp(d2).unwrap())
             .unwrap()
@@ -55,7 +54,7 @@ impl<const D: usize, const T: usize> PkdForest<D, T> {
     pub fn might_collide(&self, needle: [f32; D], r_squared: f32) -> bool {
         self.test_seqs
             .iter()
-            .any(|t| distsq(t.query1(needle), needle) < r_squared)
+            .any(|t| distsq(t.points[forward_pass(&t.tests, &needle)], needle) < r_squared)
     }
 
     #[must_use]
@@ -142,28 +141,6 @@ impl<const D: usize> RandomizedTree<D> {
         }
     }
 
-    pub fn query1(&self, needle: [f32; D]) -> [f32; D] {
-        let n2 = self.tests.len() + 1;
-        assert!(n2.is_power_of_two());
-
-        let mut test_idx = 0;
-        let mut state = self.seed;
-        for _ in 0..n2.trailing_zeros() as usize {
-            // println!("current idx: {test_idx}");
-            let d = state as usize % D;
-            let add = if needle[d] < (self.tests[test_idx]) {
-                1
-            } else {
-                2
-            };
-            test_idx <<= 1;
-            test_idx += add;
-            state = xorshift(state);
-        }
-
-        self.points[test_idx - self.tests.len()]
-    }
-
     #[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
     /// Perform a masked SIMD query of this tree, only determining the location of the nearest
     /// neighbors for points in `mask`.
@@ -177,16 +154,9 @@ impl<const D: usize> RandomizedTree<D> {
     {
         let mut test_idxs: Simd<isize, L> = Simd::splat(0);
         let mut state = self.seed;
-        let n2 = self.tests.len() + 1;
-        debug_assert!(n2.is_power_of_two());
-
-        // in release mode, tell the compiler about this invariant
-        if !n2.is_power_of_two() {
-            unsafe { unreachable_unchecked() };
-        }
 
         // Advance the tests forward
-        for _ in 0..n2.trailing_zeros() as usize {
+        for _ in 0..self.tests.len().trailing_ones() {
             let relevant_tests: Simd<f32, L> = unsafe {
                 Simd::gather_select_ptr(
                     Simd::splat((self.tests.as_ref() as *const [f32]).cast())
@@ -239,9 +209,9 @@ mod tests {
 
         let forest = PkdForest::<2, 2>::new(&points, &mut thread_rng());
         // assert_eq!(forest.query1([0.01, 0.02]), ([]))
-        let (nearest, ndsq) = forest.query1([0.01, 0.02]);
+        let (nearest, ndsq) = forest.approx_nearest([0.01, 0.02]);
         assert_eq!(nearest, [0.0, 0.0]);
         assert!((ndsq - 0.0005) < 1e-6);
-        println!("{:?}", forest.query1([0.01, 0.02]));
+        println!("{:?}", forest.approx_nearest([0.01, 0.02]));
     }
 }

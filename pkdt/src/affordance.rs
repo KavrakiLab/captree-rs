@@ -2,7 +2,6 @@
 //! and SIMD batch parallelism.
 
 use std::{
-    hint::unreachable_unchecked,
     marker::PhantomData,
     mem::size_of,
     ops::{AddAssign, Mul, Sub},
@@ -15,7 +14,10 @@ use std::{
 
 use rand::Rng;
 
-use crate::{median_partition, Axis, AxisSimd, Distance, Index, IndexSimd, SquaredEuclidean};
+use crate::{
+    forward_pass, forward_pass_simd, median_partition, Axis, AxisSimd, Distance, Index, IndexSimd,
+    SquaredEuclidean,
+};
 
 #[derive(Clone, Debug, PartialEq)]
 #[allow(clippy::module_name_repetitions)]
@@ -244,21 +246,7 @@ where
         debug_assert!(self.rsq_range.0 <= radius);
         debug_assert!(radius <= self.rsq_range.1);
 
-        let n2 = self.tests.len() + 1;
-        debug_assert!(n2.is_power_of_two());
-
-        // forward pass through the tree
-        let mut test_idx = 0;
-        let mut k = 0;
-        for _ in 0..n2.trailing_zeros() as usize {
-            test_idx = 2 * test_idx
-                + 1
-                + usize::from(center[k] >= unsafe { *self.tests.get_unchecked(test_idx) });
-            k = (k + 1) % K;
-        }
-
-        // retrieve affordance buffer location
-        let i = test_idx - self.tests.len();
+        let i = forward_pass(&self.tests, center);
         let aabb = unsafe { self.aabbs.get_unchecked(i) };
         if D::closest_distance_to_volume(&aabb, center) > radius {
             return false;
@@ -310,7 +298,11 @@ where
     #[must_use]
     /// Determine whether any sphere in the list of provided spheres intersects a point in this
     /// tree.
-    pub fn collides_simd<const L: usize>(&self, centers: &[Simd<A, L>], radii: Simd<A, L>) -> bool
+    pub fn collides_simd<const L: usize>(
+        &self,
+        centers: &[Simd<A, L>; K],
+        radii: Simd<A, L>,
+    ) -> bool
     where
         LaneCount<L>: SupportedLaneCount,
         Simd<A, L>:
@@ -318,29 +310,7 @@ where
         Mask<isize, L>: From<<Simd<A, L> as SimdPartialEq>::Mask>,
         A: Axis + AxisSimd<<Simd<A, L> as SimdPartialEq>::Mask>,
     {
-        let mut test_idxs: Simd<isize, L> = Simd::splat(0);
-        let n2 = self.tests.len() + 1;
-        debug_assert!(n2.is_power_of_two());
-
-        // in release mode, tell the compiler about this invariant
-        if !n2.is_power_of_two() {
-            unsafe { unreachable_unchecked() };
-        }
-
-        let mut k = 0;
-
-        // Advance the tests forward
-        for _ in 0..n2.trailing_zeros() as usize {
-            let test_ptrs = Simd::splat(self.tests.as_ptr()).wrapping_offset(test_idxs);
-            let relevant_tests: Simd<A, L> = unsafe { Simd::gather_ptr(test_ptrs) };
-            let cmp_results: Mask<isize, L> = centers[k % K].simd_ge(relevant_tests).into();
-
-            let one = Simd::splat(1);
-            test_idxs = (test_idxs << one) + one + (cmp_results.to_int() & Simd::splat(1));
-            k = (k + 1) % K;
-        }
-
-        let zs = test_idxs - Simd::splat(self.tests.len() as isize);
+        let zs = forward_pass_simd(&self.tests, centers);
 
         let mut inbounds = Mask::splat(true);
 

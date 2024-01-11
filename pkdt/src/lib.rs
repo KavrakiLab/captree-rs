@@ -4,14 +4,17 @@
 #![warn(clippy::pedantic)]
 
 use core::{
-    hint::unreachable_unchecked,
     mem::size_of,
     simd::{LaneCount, Mask, Simd, SupportedLaneCount},
 };
 use std::{
     fmt::Debug,
     ops::{Add, Sub},
-    simd::{cmp::SimdPartialOrd, ptr::SimdConstPtr, SimdElement},
+    simd::{
+        cmp::{SimdPartialEq, SimdPartialOrd},
+        ptr::SimdConstPtr,
+        SimdElement,
+    },
 };
 
 mod affordance;
@@ -236,68 +239,15 @@ impl<const D: usize> PkdTree<D> {
         }
     }
 
-    #[must_use]
-    #[allow(clippy::missing_panics_doc, clippy::cast_possible_wrap)]
-    /// Get the indices of points which are closest to `needles`.
-    ///
-    /// TODO: refactor this to use `needles` as an out parameter as well, and shove the nearest
-    /// points in there?
-    pub fn query<const L: usize>(&self, needles: &[Simd<f32, L>; D]) -> Simd<isize, L>
-    where
-        LaneCount<L>: SupportedLaneCount,
-    {
-        let mut test_idxs: Simd<isize, L> = Simd::splat(0);
-        let n2 = self.tests.len() + 1;
-        debug_assert!(n2.is_power_of_two());
-
-        // in release mode, tell the compiler about this invariant
-        if !n2.is_power_of_two() {
-            unsafe { unreachable_unchecked() };
-        }
-
-        // Advance the tests forward
-        for i in 0..n2.trailing_zeros() as usize {
-            let test_ptrs = Simd::splat((self.tests.as_ref() as *const [f32]).cast::<f32>())
-                .wrapping_offset(test_idxs);
-            let relevant_tests: Simd<f32, L> = unsafe { Simd::gather_ptr(test_ptrs) };
-            let cmp_results: Mask<isize, L> = needles[i % D].simd_ge(relevant_tests).into();
-
-            // TODO is there a faster way than using a conditional select?
-            test_idxs <<= Simd::splat(1);
-            test_idxs += Simd::splat(1);
-            test_idxs += cmp_results.to_int() & Simd::splat(1);
-        }
-
-        test_idxs - Simd::splat(self.tests.len() as isize)
-    }
-
-    #[must_use]
-    #[allow(clippy::missing_panics_doc)]
-    /// Get the access index of the point closest to `needle`
-    pub fn query1(&self, needle: [f32; D]) -> usize {
-        let n2 = self.tests.len() + 1;
-        assert!(n2.is_power_of_two());
-
-        let mut test_idx = 0;
-        for i in 0..n2.trailing_zeros() as usize {
-            // println!("current idx: {test_idx}");
-            let add = if needle[i % D] < (self.tests[test_idx]) {
-                1
-            } else {
-                2
-            };
-            test_idx <<= 1;
-            test_idx += add;
-        }
-
-        test_idx - self.tests.len()
+    pub fn approx_nearest(&self, needle: [f32; D]) -> [f32; D] {
+        self.get_point(forward_pass(&self.tests, &needle))
     }
 
     #[must_use]
     /// Determine whether a ball centered at `needle` with radius `r_squared` could collide with a
     /// point in this tree.
     pub fn might_collide(&self, needle: [f32; D], r_squared: f32) -> bool {
-        distsq(self.get_point(self.query1(needle)), needle) <= r_squared
+        distsq(self.approx_nearest(needle), needle) <= r_squared
     }
 
     #[must_use]
@@ -310,7 +260,7 @@ impl<const D: usize> PkdTree<D> {
     where
         LaneCount<L>: SupportedLaneCount,
     {
-        let indices = self.query(needles);
+        let indices = forward_pass_simd(&self.tests, needles);
         let mut dists_squared = Simd::splat(0.0);
         let mut ptrs = Simd::splat((self.points.as_ref() as *const [[f32; D]]).cast::<f32>())
             .wrapping_offset(indices * Simd::splat(D as isize));
@@ -423,6 +373,48 @@ impl<const D: usize> PkdTree<D> {
     }
 }
 
+#[inline]
+fn forward_pass<A: Axis, const K: usize>(tests: &[A], point: &[A; K]) -> usize {
+    // forward pass through the tree
+    let mut test_idx = 0;
+    let mut k = 0;
+    for _ in 0..tests.len().trailing_ones() {
+        test_idx =
+            2 * test_idx + 1 + usize::from(unsafe { *tests.get_unchecked(test_idx) } <= point[k]);
+        k = (k + 1) % K;
+    }
+
+    // retrieve affordance buffer location
+    test_idx - tests.len()
+}
+
+#[inline]
+fn forward_pass_simd<A, const K: usize, const L: usize>(
+    tests: &[A],
+    centers: &[Simd<A, L>; K],
+) -> Simd<isize, L>
+where
+    Simd<A, L>: SimdPartialOrd,
+    Mask<isize, L>: From<<Simd<A, L> as SimdPartialEq>::Mask>,
+    A: Axis + AxisSimd<<Simd<A, L> as SimdPartialEq>::Mask>,
+    LaneCount<L>: SupportedLaneCount,
+{
+    let mut test_idxs: Simd<isize, L> = Simd::splat(0);
+    let mut k = 0;
+    for _ in 0..tests.len().trailing_ones() {
+        let test_ptrs = Simd::splat(tests.as_ptr()).wrapping_offset(test_idxs);
+        let relevant_tests: Simd<A, L> = unsafe { Simd::gather_ptr(test_ptrs) };
+        let cmp_results: Mask<isize, L> = centers[k % K].simd_ge(relevant_tests).into();
+
+        let one = Simd::splat(1);
+        test_idxs = (test_idxs << one) + one + (cmp_results.to_int() & Simd::splat(1));
+        k = (k + 1) % K;
+    }
+
+    test_idxs - Simd::splat(tests.len() as isize)
+}
+
+#[inline]
 /// Calculate the "true" median (halfway between two midpoints) and partition `points` about said
 /// median along axis `d`.
 fn median_partition<A: Axis, const D: usize>(
@@ -522,11 +514,11 @@ mod tests {
         println!("testing for correctness...");
 
         let neg1 = [-1.0, -1.0];
-        let neg1_idx = kdt.query1(neg1);
+        let neg1_idx = forward_pass(&kdt.tests, &neg1);
         assert_eq!(neg1_idx, 0);
 
         let pos1 = [1.0, 1.0];
-        let pos1_idx = kdt.query1(pos1);
+        let pos1_idx = forward_pass(&kdt.tests, &pos1);
         assert_eq!(pos1_idx, points.len() - 1);
     }
 
@@ -547,7 +539,7 @@ mod tests {
 
         let needles = [Simd::from_array([-1.0, 2.0]), Simd::from_array([-1.0, 2.0])];
         assert_eq!(
-            kdt.query(&needles),
+            forward_pass_simd(&kdt.tests, &needles),
             Simd::from_array([0, points.len() as isize - 1])
         );
     }
@@ -559,12 +551,12 @@ mod tests {
 
         println!("{kdt:?}");
 
-        assert_eq!(kdt.query1([-1.0]), 0);
-        assert_eq!(kdt.query1([0.5]), 0);
-        assert_eq!(kdt.query1([1.5]), 1);
-        assert_eq!(kdt.query1([2.5]), 1);
-        assert_eq!(kdt.query1([3.5]), 2);
-        assert_eq!(kdt.query1([4.5]), 2);
+        assert_eq!(forward_pass(&kdt.tests, &[-0.1]), 0);
+        assert_eq!(forward_pass(&kdt.tests, &[0.5]), 0);
+        assert_eq!(forward_pass(&kdt.tests, &[1.5]), 1);
+        assert_eq!(forward_pass(&kdt.tests, &[2.5]), 1);
+        assert_eq!(forward_pass(&kdt.tests, &[3.5]), 2);
+        assert_eq!(forward_pass(&kdt.tests, &[4.5]), 2);
     }
 
     #[test]
@@ -574,12 +566,12 @@ mod tests {
 
         println!("{kdt:?}");
 
-        assert_eq!(kdt.query1([-1.0]), 0);
-        assert_eq!(kdt.query1([0.5]), 0);
-        assert_eq!(kdt.query1([1.5]), 1);
-        assert_eq!(kdt.query1([2.5]), 1);
-        assert_eq!(kdt.query1([3.5]), 2);
-        assert_eq!(kdt.query1([4.5]), 2);
+        assert_eq!(forward_pass(&kdt.tests, &[-0.1]), 0);
+        assert_eq!(forward_pass(&kdt.tests, &[0.5]), 0);
+        assert_eq!(forward_pass(&kdt.tests, &[1.5]), 1);
+        assert_eq!(forward_pass(&kdt.tests, &[2.5]), 1);
+        assert_eq!(forward_pass(&kdt.tests, &[3.5]), 2);
+        assert_eq!(forward_pass(&kdt.tests, &[4.5]), 2);
     }
 
     #[test]

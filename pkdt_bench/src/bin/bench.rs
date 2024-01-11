@@ -35,15 +35,6 @@ fn main() {
         Instant::now().duration_since(tic)
     );
 
-    println!("generating mutable kdt");
-    let tic = Instant::now();
-    let mut mutable_kdt = kiddo::KdTree::<f32, 3>::new();
-    mutable_kdt.extend(points.iter().map(|&a| (a, 0)));
-    println!(
-        "done generating mutable kdt in {:?}",
-        Instant::now().duration_since(tic)
-    );
-
     println!("forward tree memory: {:?}B", kdt.memory_used());
 
     println!("testing for performance...");
@@ -81,35 +72,11 @@ fn main() {
         kiddo_exact_time / seq_needles.len() as u32
     );
 
-    let tic = Instant::now();
-    for needle in &seq_needles {
-        black_box(
-            mutable_kdt
-                .within_unsorted_iter::<SquaredEuclidean>(needle, R_SQ)
-                .next()
-                .is_some(),
-        );
-    }
-    let toc = Instant::now();
-    let mutable_kiddo_time = toc.duration_since(tic);
-
-    println!(
-        "completed mutable kiddo in {:?} ({:?}/q)",
-        mutable_kiddo_time,
-        mutable_kiddo_time / seq_needles.len() as u32
-    );
-
-    // let tic = Instant::now();
-    // for needle in &seq_needles {
-    //     black_box(kdt.query1_exact(*needle));
-    // }
-    // let toc = Instant::now();
-    // let exact_time = toc.duration_since(tic);
-    // println!(
-    //     "completed exact in {:?} ({:?}/q)",
-    //     exact_time,
-    //     exact_time / seq_needles.len() as u32
-    // );
+    bench_forest::<1>(&points, &simd_needles, &mut rng);
+    bench_forest::<2>(&points, &simd_needles, &mut rng);
+    bench_forest::<3>(&points, &simd_needles, &mut rng);
+    bench_forest::<4>(&points, &simd_needles, &mut rng);
+    bench_forest::<5>(&points, &simd_needles, &mut rng);
 
     let tic = Instant::now();
     for &needle in &seq_needles {
@@ -118,16 +85,10 @@ fn main() {
     let toc = Instant::now();
     let seq_time = toc.duration_since(tic);
     println!(
-        "completed sequential in {:?} ({:?}/q)",
+        "completed forward sequential in {:?} ({:?}/q)",
         seq_time,
         seq_time / seq_needles.len() as u32
     );
-
-    bench_forest::<1>(&points, &simd_needles, &mut rng);
-    bench_forest::<2>(&points, &simd_needles, &mut rng);
-    bench_forest::<3>(&points, &simd_needles, &mut rng);
-    bench_forest::<4>(&points, &simd_needles, &mut rng);
-    bench_forest::<5>(&points, &simd_needles, &mut rng);
 
     let tic = Instant::now();
     for needle in &simd_needles {
@@ -136,15 +97,10 @@ fn main() {
     let toc = Instant::now();
     let simd_time = toc.duration_since(tic);
     println!(
-        "completed simd in {:?}s, ({:?}/pt, {:?}/q)",
+        "completed forward SIMD in {:?}s, ({:?}/pt, {:?}/q)",
         simd_time,
         simd_time / seq_needles.len() as u32,
         simd_time / simd_needles.len() as u32
-    );
-
-    println!(
-        "speedup: {}% vs single-query",
-        (100.0 * (seq_time.as_secs_f64() / simd_time.as_secs_f64() - 1.0)) as u64
     );
 }
 
