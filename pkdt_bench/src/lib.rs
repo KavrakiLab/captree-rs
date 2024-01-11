@@ -4,6 +4,7 @@ use std::{
     env,
     path::Path,
     simd::{LaneCount, Simd, SupportedLaneCount},
+    time::{Duration, Instant},
 };
 
 use hdf5::{File, Result};
@@ -136,4 +137,10 @@ pub fn dist<const D: usize>(a: [f32; D], b: [f32; D]) -> f32 {
         .map(|(x1, x2)| (x1 - x2).powi(2))
         .sum::<f32>()
         .sqrt()
+}
+
+pub fn stopwatch<F: FnOnce() -> R, R>(f: F) -> (R, Duration) {
+    let tic = Instant::now();
+    let r = f();
+    (r, Instant::now().duration_since(tic))
 }

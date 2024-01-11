@@ -5,11 +5,10 @@ use std::fs::File;
 use std::hint::black_box;
 use std::io::Write;
 use std::simd::Simd;
-use std::time::{Duration, Instant};
 
 use kiddo::SquaredEuclidean;
 use pkdt::{AffordanceTree, PkdTree};
-use pkdt_bench::make_needles;
+use pkdt_bench::{make_needles, stopwatch};
 use rand::Rng;
 use rand_chacha::rand_core::SeedableRng;
 use rand_chacha::ChaCha20Rng;
@@ -50,33 +49,33 @@ fn do_row(
         })
         .collect::<Vec<_>>();
 
-    let (kdt, kdt_time) = time(|| kiddo::ImmutableKdTree::new_from_slice(&points));
-    let (_, kdt_total_q_time) = time(|| {
+    let (kdt, kdt_time) = stopwatch(|| kiddo::ImmutableKdTree::new_from_slice(&points));
+    let (_, kdt_total_q_time) = stopwatch(|| {
         for seq_needle in &seq_needles {
             black_box(kdt.within_unsorted::<SquaredEuclidean>(seq_needle, QUERY_RADIUS_SQ));
         }
     });
 
-    let (pkdt, pkdt_time) = time(|| PkdTree::new(&points));
-    let (_, pkdt_total_seq_q_time) = time(|| {
+    let (pkdt, pkdt_time) = stopwatch(|| PkdTree::new(&points));
+    let (_, pkdt_total_seq_q_time) = stopwatch(|| {
         for &seq_needle in &seq_needles {
             black_box(pkdt.might_collide(seq_needle, QUERY_RADIUS_SQ));
         }
     });
-    let (_, pkdt_total_simd_q_time) = time(|| {
+    let (_, pkdt_total_simd_q_time) = stopwatch(|| {
         for simd_needle in &simd_needles {
             black_box(pkdt.might_collide_simd(simd_needle, Simd::splat(QUERY_RADIUS_SQ)));
         }
     });
 
     let (afftree, afftree_time) =
-        time(|| AffordanceTree::<3>::new(&points, RADIUS_RANGE_SQ, &mut rng).unwrap());
-    let (_, afftree_total_seq_q_time) = time(|| {
+        stopwatch(|| AffordanceTree::<3>::new(&points, RADIUS_RANGE_SQ, &mut rng).unwrap());
+    let (_, afftree_total_seq_q_time) = stopwatch(|| {
         for seq_needle in &seq_needles {
             black_box(afftree.collides(seq_needle, QUERY_RADIUS_SQ));
         }
     });
-    let (_, afftree_total_simd_q_time) = time(|| {
+    let (_, afftree_total_simd_q_time) = stopwatch(|| {
         for simd_needle in &simd_needles {
             black_box(afftree.collides_simd(simd_needle, Simd::splat(QUERY_RADIUS)));
         }
@@ -100,10 +99,4 @@ fn do_row(
     )?;
 
     Ok(())
-}
-
-fn time<F: FnOnce() -> R, R>(f: F) -> (R, Duration) {
-    let tic = Instant::now();
-    let r = f();
-    (r, Instant::now().duration_since(tic))
 }

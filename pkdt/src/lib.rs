@@ -278,14 +278,7 @@ impl<const D: usize> PkdTree<D> {
     pub fn query1_exact(&self, needle: [f32; D]) -> usize {
         let mut id = usize::MAX;
         let mut best_distsq = f32::INFINITY;
-        self.exact_help(
-            0,
-            0,
-            &[[-f32::INFINITY, f32::INFINITY]; D],
-            needle,
-            &mut id,
-            &mut best_distsq,
-        );
+        self.exact_help(0, 0, &Volume::ALL, needle, &mut id, &mut best_distsq);
         id
     }
 
@@ -294,12 +287,12 @@ impl<const D: usize> PkdTree<D> {
         &self,
         test_idx: usize,
         d: u8,
-        bounding_box: &[[f32; 2]; D],
+        bounding_box: &Volume<f32, D>,
         point: [f32; D],
         best_id: &mut usize,
         best_distsq: &mut f32,
     ) {
-        if bb_distsq(point, bounding_box) > *best_distsq {
+        if SquaredEuclidean::closest_distance_to_volume(bounding_box, &point) > *best_distsq {
             return;
         }
 
@@ -317,9 +310,9 @@ impl<const D: usize> PkdTree<D> {
         let test = self.tests[test_idx];
 
         let mut bb_below = *bounding_box;
-        bb_below[d as usize][1] = test;
+        bb_below.upper[d as usize] = test;
         let mut bb_above = *bounding_box;
-        bb_above[d as usize][0] = test;
+        bb_above.lower[d as usize] = test;
 
         let next_d = (d + 1) % D as u8;
         if point[d as usize] < test {
@@ -464,23 +457,6 @@ fn median_partition<A: Axis, const D: usize>(
         .max_by(|a, b| a.partial_cmp(b).unwrap())
         .unwrap();
     median_lo.in_between(median_hi)
-}
-
-fn bb_distsq<const D: usize>(point: [f32; D], bb: &[[f32; 2]; D]) -> f32 {
-    point
-        .into_iter()
-        .zip(bb.iter())
-        .map(|(x, [lower, upper])| {
-            (if x < *lower {
-                *lower - x
-            } else if *upper < x {
-                x - *upper
-            } else {
-                0.0
-            })
-            .powi(2)
-        })
-        .sum()
 }
 
 fn distsq<const D: usize>(a: [f32; D], b: [f32; D]) -> f32 {

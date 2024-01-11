@@ -134,10 +134,7 @@ where
             d: 0,
             i: 0,
             possible_collisions: Vec::new(),
-            volume: Volume {
-                lower: [A::NEG_INFINITY; K],
-                upper: [A::INFINITY; K],
-            },
+            volume: Volume::ALL,
         };
 
         aff_starts.push(0.try_into().ok()?);
@@ -382,6 +379,11 @@ impl<A, const K: usize> Volume<A, K>
 where
     A: Axis,
 {
+    pub(crate) const ALL: Self = Volume {
+        lower: [A::NEG_INFINITY; K],
+        upper: [A::INFINITY; K],
+    };
+
     /// Split this volume by a test plane with value `test` along `dim`.
     fn split(mut self, test: A, dim: usize) -> (Self, Self) {
         let mut rhs = self;

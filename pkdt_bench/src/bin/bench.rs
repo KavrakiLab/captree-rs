@@ -1,10 +1,10 @@
 #![feature(portable_simd)]
 
-use std::{hint::black_box, simd::Simd, time::Instant};
+use std::{hint::black_box, simd::Simd};
 
 use kiddo::SquaredEuclidean;
 use pkdt::{AffordanceTree, PkdForest};
-use pkdt_bench::get_points;
+use pkdt_bench::{get_points, stopwatch};
 use rand::{seq::SliceRandom, Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 
@@ -23,17 +23,12 @@ fn main() {
 
     println!("{} points", points.len());
     println!("generating PKDT...");
-    let tic = Instant::now();
-    let kdt = pkdt::PkdTree::new(&points);
-    println!("generated tree in {:?}", Instant::now().duration_since(tic));
+    let (kdt, kdt_gen_time) = stopwatch(|| pkdt::PkdTree::new(&points));
+    println!("generated tree in {:?}", kdt_gen_time);
 
     println!("generating competitor's KDT");
-    let tic = Instant::now();
-    let kiddo_kdt = kiddo::ImmutableKdTree::new_from_slice(&points);
-    println!(
-        "generated kiddo tree in {:?}",
-        Instant::now().duration_since(tic)
-    );
+    let (kiddo_kdt, kiddo_gen_time) = stopwatch(|| kiddo::ImmutableKdTree::new_from_slice(&points));
+    println!("generated kiddo tree in {:?}", kiddo_gen_time);
 
     println!("forward tree memory: {:?}B", kdt.memory_used());
 
@@ -46,12 +41,11 @@ fn main() {
 
     println!("testing sequential...");
 
-    let tic = Instant::now();
-    for needle in &seq_needles {
-        black_box(kiddo_kdt.within_unsorted::<SquaredEuclidean>(needle, R_SQ));
-    }
-    let toc = Instant::now();
-    let kiddo_range_time = toc.duration_since(tic);
+    let (_, kiddo_range_time) = stopwatch(|| {
+        for needle in &seq_needles {
+            black_box(kiddo_kdt.within_unsorted::<SquaredEuclidean>(needle, R_SQ));
+        }
+    });
 
     println!(
         "completed kiddo (range) in {:?} ({:?}/q)",
@@ -59,12 +53,11 @@ fn main() {
         kiddo_range_time / seq_needles.len() as u32
     );
 
-    let tic = Instant::now();
-    for needle in &seq_needles {
-        black_box(kiddo_kdt.nearest_one::<SquaredEuclidean>(needle).distance < R_SQ);
-    }
-    let toc = Instant::now();
-    let kiddo_exact_time = toc.duration_since(tic);
+    let (_, kiddo_exact_time) = stopwatch(|| {
+        for needle in &seq_needles {
+            black_box(kiddo_kdt.nearest_one::<SquaredEuclidean>(needle).distance < R_SQ);
+        }
+    });
 
     println!(
         "completed kiddo (exact) in {:?} ({:?}/q)",
@@ -78,24 +71,22 @@ fn main() {
     bench_forest::<4>(&points, &simd_needles, &mut rng);
     bench_forest::<5>(&points, &simd_needles, &mut rng);
 
-    let tic = Instant::now();
-    for &needle in &seq_needles {
-        black_box(kdt.might_collide(needle, R_SQ));
-    }
-    let toc = Instant::now();
-    let seq_time = toc.duration_since(tic);
+    let (_, seq_time) = stopwatch(|| {
+        for &needle in &seq_needles {
+            black_box(kdt.might_collide(needle, R_SQ));
+        }
+    });
     println!(
         "completed forward sequential in {:?} ({:?}/q)",
         seq_time,
         seq_time / seq_needles.len() as u32
     );
 
-    let tic = Instant::now();
-    for needle in &simd_needles {
-        black_box(kdt.might_collide_simd::<L>(needle, Simd::splat(R_SQ)));
-    }
-    let toc = Instant::now();
-    let simd_time = toc.duration_since(tic);
+    let (_, simd_time) = stopwatch(|| {
+        for needle in &simd_needles {
+            black_box(kdt.might_collide_simd::<L>(needle, Simd::splat(R_SQ)));
+        }
+    });
     println!(
         "completed forward SIMD in {:?}s, ({:?}/pt, {:?}/q)",
         simd_time,
@@ -110,42 +101,43 @@ fn bench_affordance(
     seq_needles: &[[f32; 3]],
     rng: &mut impl Rng,
 ) {
-    let tic = Instant::now();
-    let aff_tree = AffordanceTree::<3, _, u64>::new(
-        points,
-        (R_SQ_RANGE.0, R_SQ_RANGE.1),
-        // (0.0f32, 0.02f32.powi(2)),
-        rng,
-    )
-    .unwrap();
-    let toc = Instant::now();
-    println!("constructed affordance tree in {:?}", toc - tic);
+    let (aff_tree, afftree_construct_time) = stopwatch(|| {
+        AffordanceTree::<3, _, u64>::new(
+            points,
+            (R_SQ_RANGE.0, R_SQ_RANGE.1),
+            // (0.0f32, 0.02f32.powi(2)),
+            rng,
+        )
+        .unwrap()
+    });
+    println!(
+        "constructed affordance tree in {:?}",
+        afftree_construct_time
+    );
     println!("affordance tree memory: {:?}B", aff_tree.memory_used());
     println!("affordance size: {}", aff_tree.affordance_size());
 
-    let tic = Instant::now();
-    for needle in seq_needles {
-        black_box(aff_tree.collides(needle, R_SQ));
-    }
-    let toc = Instant::now();
-    let aff_time = toc - tic;
+    let (_, aff_time) = stopwatch(|| {
+        for needle in seq_needles {
+            black_box(aff_tree.collides(needle, R_SQ));
+        }
+    });
     println!(
         "completed sequential queries for affordance trees in {:?} ({:?}/q)",
         aff_time,
         aff_time / seq_needles.len() as u32
     );
 
-    let tic = Instant::now();
-    for simd_needle in simd_needles {
-        black_box(aff_tree.collides_simd(simd_needle, Simd::splat(R)));
-    }
-    let toc = Instant::now();
-    let aff_time = toc - tic;
+    let (_, aff_simd_time) = stopwatch(|| {
+        for simd_needle in simd_needles {
+            black_box(aff_tree.collides_simd(simd_needle, Simd::splat(R)));
+        }
+    });
     println!(
         "completed SIMD queries for affordance trees in {:?} ({:?}/pt, {:?}/q)",
-        aff_time,
-        aff_time / seq_needles.len() as u32,
-        aff_time / simd_needles.len() as u32
+        aff_simd_time,
+        aff_simd_time / seq_needles.len() as u32,
+        aff_simd_time / simd_needles.len() as u32
     );
 }
 
@@ -156,15 +148,15 @@ fn bench_forest<const T: usize>(
 ) {
     let forest = PkdForest::<3, T>::new(points, rng);
 
-    let tic = Instant::now();
-    for needle in simd_needles {
-        black_box(forest.might_collide_simd(needle, Simd::splat(R_SQ)));
-    }
-    let toc = Instant::now();
+    let (_, time) = stopwatch(|| {
+        for needle in simd_needles {
+            black_box(forest.might_collide_simd(needle, Simd::splat(R_SQ)));
+        }
+    });
     println!(
         "completed forest (T={T}) in {:?} ({:?}/pt, {:?}/q)",
-        toc - tic,
-        (toc - tic) / (simd_needles.len() * L) as u32,
-        (toc - tic) / simd_needles.len() as u32,
+        time,
+        time / (simd_needles.len() * L) as u32,
+        time / simd_needles.len() as u32,
     );
 }

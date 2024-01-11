@@ -1,10 +1,10 @@
 #![feature(portable_simd)]
 
-use std::{cmp::min, hint::black_box, simd::Simd, time::Instant};
+use std::{cmp::min, hint::black_box, simd::Simd};
 
 use kiddo::{ImmutableKdTree, SquaredEuclidean};
 use pkdt::AffordanceTree;
-use pkdt_bench::make_needles;
+use pkdt_bench::{make_needles, stopwatch};
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 
@@ -28,43 +28,34 @@ fn main() {
             })
             .collect::<Vec<_>>();
 
-        let tic = Instant::now();
-        let aff_tree = AffordanceTree::<3>::new(&points, RADIUS_RANGE_SQ, &mut rng).unwrap();
-        let toc = Instant::now();
-        let build_time = toc - tic;
+        let (aff_tree, build_time) =
+            stopwatch(|| AffordanceTree::<3>::new(&points, RADIUS_RANGE_SQ, &mut rng).unwrap());
 
-        let tic = Instant::now();
-        for needle in &seq_needles {
-            black_box(aff_tree.collides(needle, RADIUS_SQ));
-        }
-        let toc = Instant::now();
-        let seq_time = toc - tic;
+        let (_, seq_time) = stopwatch(|| {
+            for needle in &seq_needles {
+                black_box(aff_tree.collides(needle, RADIUS_SQ));
+            }
+        });
 
-        let tic = Instant::now();
-        for needle in simd_needles {
-            black_box(aff_tree.collides_simd(&needle, Simd::splat(RADIUS)));
-        }
-        let toc = Instant::now();
-        let simd_time = toc - tic;
+        let (_, simd_time) = stopwatch(|| {
+            for needle in simd_needles {
+                black_box(aff_tree.collides_simd(&needle, Simd::splat(RADIUS)));
+            }
+        });
 
-        let tic = Instant::now();
-        let kdt = ImmutableKdTree::new_from_slice(&points);
-        let toc = Instant::now();
-        let kdt_build_time = toc - tic;
+        let (kdt, kdt_build_time) = stopwatch(|| ImmutableKdTree::new_from_slice(&points));
 
-        let tic = Instant::now();
-        for needle in &seq_needles {
-            black_box(kdt.within_unsorted::<SquaredEuclidean>(needle, RADIUS_SQ));
-        }
-        let toc = Instant::now();
-        let kdt_query0 = toc - tic;
+        let (_, kdt_query0) = stopwatch(|| {
+            for needle in &seq_needles {
+                black_box(kdt.within_unsorted::<SquaredEuclidean>(needle, RADIUS_SQ));
+            }
+        });
 
-        let tic = Instant::now();
-        for needle in &seq_needles {
-            black_box(kdt.nearest_one::<SquaredEuclidean>(needle).distance < RADIUS_SQ);
-        }
-        let toc = Instant::now();
-        let kdt_query1 = toc - tic;
+        let (_, kdt_query1) = stopwatch(|| {
+            for needle in &seq_needles {
+                black_box(kdt.nearest_one::<SquaredEuclidean>(needle).distance < RADIUS_SQ);
+            }
+        });
 
         let kdt_query_time = min(kdt_query0, kdt_query1);
 
