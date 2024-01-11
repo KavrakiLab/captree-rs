@@ -82,7 +82,7 @@ struct BuildStackFrame<'a, A, const K: usize> {
     /// A slice of the set of points belonging to the subtree currently being constructed.
     points: &'a mut [[A; K]],
     /// The current dimension to split on.
-    d: u8,
+    k: u8,
     /// The current index in the test buffer.
     i: usize,
     /// The points which might collide with the contents of the current cell.
@@ -131,7 +131,7 @@ where
         // current frame - used as a CPS transformation to prevent excessive push/pop to stack
         let mut frame = BuildStackFrame {
             points: &mut points2,
-            d: 0,
+            k: 0,
             i: 0,
             possible_collisions: Vec::new(),
             volume: Volume::ALL,
@@ -179,10 +179,10 @@ where
                 frame = f;
             } else {
                 // split the volume in half
-                let test = median_partition(frame.points, frame.d as usize, rng);
+                let test = median_partition(frame.points, frame.k as usize, rng);
                 tests[frame.i] = test;
                 let (lhs, rhs) = frame.points.split_at_mut(frame.points.len() / 2);
-                let (low_vol, hi_vol) = frame.volume.split(test, frame.d as usize);
+                let (low_vol, hi_vol) = frame.volume.split(test, frame.k as usize);
                 let mut lo_afford = frame.possible_collisions;
                 let mut hi_afford = Vec::<[A; K]>::with_capacity(lo_afford.len());
 
@@ -197,12 +197,12 @@ where
                 lo_afford.extend(rhs.iter().filter(|pt| low_vol.affords::<D>(pt, &r_range)));
                 hi_afford.extend(lhs.iter().filter(|pt| hi_vol.affords::<D>(pt, &r_range)));
 
-                let next_dim = (frame.d + 1) % K as u8;
+                let next_k = (frame.k + 1) % K as u8;
 
                 // because the stack is FIFO, we must put the left recursion last
                 stack.push(BuildStackFrame {
                     points: rhs,
-                    d: next_dim,
+                    k: next_k,
                     i: 2 * frame.i + 2,
                     possible_collisions: hi_afford,
                     volume: hi_vol,
@@ -211,7 +211,7 @@ where
                 // Save a push/pop operation by directly updating the current frame
                 frame = BuildStackFrame {
                     points: lhs,
-                    d: next_dim,
+                    k: next_k,
                     i: 2 * frame.i + 1,
                     possible_collisions: lo_afford,
                     volume: low_vol,

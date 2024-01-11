@@ -10,22 +10,22 @@ use rand::Rng;
 use crate::{distsq, forward_pass, median_partition};
 
 #[derive(Clone, Debug)]
-struct RandomizedTree<const D: usize> {
+struct RandomizedTree<const K: usize> {
     tests: Box<[f32]>,
     seed: u32,
-    points: Box<[[f32; D]]>,
+    points: Box<[[f32; K]]>,
 }
 
 #[derive(Clone, Debug)]
 #[allow(clippy::module_name_repetitions)]
-pub struct PkdForest<const D: usize, const T: usize> {
-    test_seqs: [RandomizedTree<D>; T],
+pub struct PkdForest<const K: usize, const T: usize> {
+    test_seqs: [RandomizedTree<K>; T],
 }
 
-impl<const D: usize, const T: usize> PkdForest<D, T> {
-    pub fn new(points: &[[f32; D]], rng: &mut impl Rng) -> Self {
+impl<const K: usize, const T: usize> PkdForest<K, T> {
+    pub fn new(points: &[[f32; K]], rng: &mut impl Rng) -> Self {
         unsafe {
-            let mut buf: [MaybeUninit<RandomizedTree<D>>; T] = MaybeUninit::uninit().assume_init();
+            let mut buf: [MaybeUninit<RandomizedTree<K>>; T] = MaybeUninit::uninit().assume_init();
 
             for tree in &mut buf {
                 tree.write(RandomizedTree::new(points, rng));
@@ -41,7 +41,7 @@ impl<const D: usize, const T: usize> PkdForest<D, T> {
     /// # Panics
     ///
     /// This function will panic if `T` is 0.
-    pub fn approx_nearest(&self, needle: [f32; D]) -> ([f32; D], f32) {
+    pub fn approx_nearest(&self, needle: [f32; K]) -> ([f32; K], f32) {
         self.test_seqs
             .iter()
             .map(|t| t.points[forward_pass(&t.tests, &needle)])
@@ -51,7 +51,7 @@ impl<const D: usize, const T: usize> PkdForest<D, T> {
     }
 
     #[must_use]
-    pub fn might_collide(&self, needle: [f32; D], r_squared: f32) -> bool {
+    pub fn might_collide(&self, needle: [f32; K], r_squared: f32) -> bool {
         self.test_seqs
             .iter()
             .any(|t| distsq(t.points[forward_pass(&t.tests, &needle)], needle) < r_squared)
@@ -60,7 +60,7 @@ impl<const D: usize, const T: usize> PkdForest<D, T> {
     #[must_use]
     pub fn might_collide_simd<const L: usize>(
         &self,
-        needles: &[Simd<f32, L>; D],
+        needles: &[Simd<f32, L>; K],
         radii_squared: Simd<f32, L>,
     ) -> bool
     where
@@ -71,7 +71,7 @@ impl<const D: usize, const T: usize> PkdForest<D, T> {
         for tree in &self.test_seqs {
             let indices = tree.mask_query(needles, not_yet_collided);
             let mut dists_sq = Simd::splat(0.0);
-            let mut ptrs = Simd::splat((tree.points.as_ref() as *const [[f32; D]]).cast::<f32>())
+            let mut ptrs = Simd::splat((tree.points.as_ref() as *const [[f32; K]]).cast::<f32>())
                 .wrapping_offset(indices);
             for needle_set in needles {
                 let diffs =
@@ -93,11 +93,11 @@ impl<const D: usize, const T: usize> PkdForest<D, T> {
     }
 }
 
-impl<const D: usize> RandomizedTree<D> {
-    pub fn new(points: &[[f32; D]], rng: &mut impl Rng) -> Self {
+impl<const K: usize> RandomizedTree<K> {
+    pub fn new(points: &[[f32; K]], rng: &mut impl Rng) -> Self {
         /// Recursive helper function to sort the points for the KD tree and generate the tests.
-        fn recur_sort_points<const D: usize>(
-            points: &mut [[f32; D]],
+        fn recur_sort_points<const K: usize>(
+            points: &mut [[f32; K]],
             tests: &mut [f32],
             test_dims: &mut [u8],
             i: usize,
@@ -105,7 +105,7 @@ impl<const D: usize> RandomizedTree<D> {
             rng: &mut impl Rng,
         ) {
             if points.len() > 1 {
-                let d = state as usize % D;
+                let d = state as usize % K;
                 tests[i] = median_partition(points, d, rng);
                 test_dims[i] = u8::try_from(d).unwrap();
                 let (lhs, rhs) = points.split_at_mut(points.len() / 2);
@@ -114,14 +114,14 @@ impl<const D: usize> RandomizedTree<D> {
             }
         }
 
-        assert!(D < u8::MAX as usize);
+        assert!(K < u8::MAX as usize);
 
         let n2 = points.len().next_power_of_two();
 
         let mut tests = vec![f32::INFINITY; n2 - 1].into_boxed_slice();
 
         // hack: just pad with infinity to make it a power of 2
-        let mut new_points = vec![[f32::INFINITY; D]; n2];
+        let mut new_points = vec![[f32::INFINITY; K]; n2];
         new_points[..points.len()].copy_from_slice(points);
         let mut test_dims = vec![0; n2 - 1].into_boxed_slice();
         let seed = rng.gen();
@@ -146,7 +146,7 @@ impl<const D: usize> RandomizedTree<D> {
     /// neighbors for points in `mask`.
     fn mask_query<const L: usize>(
         &self,
-        needles: &[Simd<f32, L>; D],
+        needles: &[Simd<f32, L>; K],
         mask: Mask<isize, L>,
     ) -> Simd<isize, L>
     where
@@ -165,7 +165,7 @@ impl<const D: usize> RandomizedTree<D> {
                     Simd::splat(f32::NAN),
                 )
             };
-            let d = state as usize % D;
+            let d = state as usize % K;
             let cmp_results: Mask<isize, L> = (needles[d].simd_ge(relevant_tests)).into();
 
             // TODO is there a faster way than using a conditional select?

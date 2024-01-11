@@ -183,7 +183,7 @@ fn clamp<A: PartialOrd>(x: A, min: A, max: A) -> A {
 /// # Generic parameters
 ///
 /// - `D`: The dimension of the space.
-pub struct PkdTree<const D: usize> {
+pub struct PkdTree<const K: usize> {
     /// The test values for determining which part of the tree to enter.
     ///
     /// The first element of `tests` should be the first value to test against.
@@ -194,10 +194,10 @@ pub struct PkdTree<const D: usize> {
     /// The length of `tests` must be `N`, rounded up to the next power of 2, minus one.
     tests: Box<[f32]>,
     /// The relevant points at the center of each volume divided by `tests`.
-    points: Box<[[f32; D]]>,
+    points: Box<[[f32; K]]>,
 }
 
-impl<const D: usize> PkdTree<D> {
+impl<const K: usize> PkdTree<K> {
     #[must_use]
     #[allow(clippy::cast_possible_truncation)]
     /// Construct a new `PkdTree` containing all the points in `points`.
@@ -209,27 +209,27 @@ impl<const D: usize> PkdTree<D> {
     /// This function will panic if `D` is greater than or equal to 255.
     ///
     /// TODO: do all our sorting on the allocation that we return?
-    pub fn new(points: &[[f32; D]]) -> Self {
+    pub fn new(points: &[[f32; K]]) -> Self {
         /// Recursive helper function to sort the points for the KD tree and generate the tests.
         /// Runs in O(n log n)
-        fn build_tree<const D: usize>(points: &mut [[f32; D]], tests: &mut [f32], d: u8, i: usize) {
+        fn build_tree<const K: usize>(points: &mut [[f32; K]], tests: &mut [f32], k: u8, i: usize) {
             if points.len() > 1 {
-                tests[i] = median_partition(points, d as usize, &mut thread_rng());
-                let next_dim = (d + 1) % D as u8;
+                tests[i] = median_partition(points, k as usize, &mut thread_rng());
+                let next_k = (k + 1) % K as u8;
                 let (lhs, rhs) = points.split_at_mut(points.len() / 2);
-                build_tree(lhs, tests, next_dim, 2 * i + 1);
-                build_tree(rhs, tests, next_dim, 2 * i + 2);
+                build_tree(lhs, tests, next_k, 2 * i + 1);
+                build_tree(rhs, tests, next_k, 2 * i + 2);
             }
         }
 
-        assert!(D < u8::MAX as usize);
+        assert!(K < u8::MAX as usize);
 
         let n2 = points.len().next_power_of_two();
 
         let mut tests = vec![f32::INFINITY; n2 - 1].into_boxed_slice();
 
         // hack: just pad with infinity to make it a power of 2
-        let mut new_points = vec![[f32::INFINITY; D]; n2].into_boxed_slice();
+        let mut new_points = vec![[f32::INFINITY; K]; n2].into_boxed_slice();
         new_points[..points.len()].copy_from_slice(points);
         build_tree(new_points.as_mut(), tests.as_mut(), 0, 0);
 
@@ -239,14 +239,14 @@ impl<const D: usize> PkdTree<D> {
         }
     }
 
-    pub fn approx_nearest(&self, needle: [f32; D]) -> [f32; D] {
+    pub fn approx_nearest(&self, needle: [f32; K]) -> [f32; K] {
         self.get_point(forward_pass(&self.tests, &needle))
     }
 
     #[must_use]
     /// Determine whether a ball centered at `needle` with radius `r_squared` could collide with a
     /// point in this tree.
-    pub fn might_collide(&self, needle: [f32; D], r_squared: f32) -> bool {
+    pub fn might_collide(&self, needle: [f32; K], r_squared: f32) -> bool {
         distsq(self.approx_nearest(needle), needle) <= r_squared
     }
 
@@ -254,7 +254,7 @@ impl<const D: usize> PkdTree<D> {
     #[allow(clippy::cast_possible_wrap)]
     pub fn might_collide_simd<const L: usize>(
         &self,
-        needles: &[Simd<f32, L>; D],
+        needles: &[Simd<f32, L>; K],
         radii_squared: Simd<f32, L>,
     ) -> bool
     where
@@ -262,8 +262,8 @@ impl<const D: usize> PkdTree<D> {
     {
         let indices = forward_pass_simd(&self.tests, needles);
         let mut dists_squared = Simd::splat(0.0);
-        let mut ptrs = Simd::splat((self.points.as_ref() as *const [[f32; D]]).cast::<f32>())
-            .wrapping_offset(indices * Simd::splat(D as isize));
+        let mut ptrs = Simd::splat((self.points.as_ref() as *const [[f32; K]]).cast::<f32>())
+            .wrapping_offset(indices * Simd::splat(K as isize));
         for needle_values in needles {
             let deltas = unsafe { Simd::gather_ptr(ptrs) } - needle_values;
             dists_squared += deltas * deltas;
@@ -275,7 +275,7 @@ impl<const D: usize> PkdTree<D> {
     #[must_use]
     #[allow(clippy::cast_possible_wrap, clippy::cast_sign_loss)]
     /// Query for one point in this tree, returning an exact answer.
-    pub fn query1_exact(&self, needle: [f32; D]) -> usize {
+    pub fn query1_exact(&self, needle: [f32; K]) -> usize {
         let mut id = usize::MAX;
         let mut best_distsq = f32::INFINITY;
         self.exact_help(0, 0, &Volume::ALL, needle, &mut id, &mut best_distsq);
@@ -286,9 +286,9 @@ impl<const D: usize> PkdTree<D> {
     fn exact_help(
         &self,
         test_idx: usize,
-        d: u8,
-        bounding_box: &Volume<f32, D>,
-        point: [f32; D],
+        k: u8,
+        bounding_box: &Volume<f32, K>,
+        point: [f32; K],
         best_id: &mut usize,
         best_distsq: &mut f32,
     ) {
@@ -310,15 +310,15 @@ impl<const D: usize> PkdTree<D> {
         let test = self.tests[test_idx];
 
         let mut bb_below = *bounding_box;
-        bb_below.upper[d as usize] = test;
+        bb_below.upper[k as usize] = test;
         let mut bb_above = *bounding_box;
-        bb_above.lower[d as usize] = test;
+        bb_above.lower[k as usize] = test;
 
-        let next_d = (d + 1) % D as u8;
-        if point[d as usize] < test {
+        let next_k = (k + 1) % K as u8;
+        if point[k as usize] < test {
             self.exact_help(
                 2 * test_idx + 1,
-                next_d,
+                next_k,
                 &bb_below,
                 point,
                 best_id,
@@ -326,7 +326,7 @@ impl<const D: usize> PkdTree<D> {
             );
             self.exact_help(
                 2 * test_idx + 2,
-                next_d,
+                next_k,
                 &bb_above,
                 point,
                 best_id,
@@ -335,7 +335,7 @@ impl<const D: usize> PkdTree<D> {
         } else {
             self.exact_help(
                 2 * test_idx + 2,
-                next_d,
+                next_k,
                 &bb_above,
                 point,
                 best_id,
@@ -343,7 +343,7 @@ impl<const D: usize> PkdTree<D> {
             );
             self.exact_help(
                 2 * test_idx + 1,
-                next_d,
+                next_k,
                 &bb_below,
                 point,
                 best_id,
@@ -354,15 +354,15 @@ impl<const D: usize> PkdTree<D> {
 
     #[must_use]
     #[allow(clippy::missing_panics_doc)]
-    pub fn get_point(&self, id: usize) -> [f32; D] {
+    pub fn get_point(&self, id: usize) -> [f32; K] {
         self.points[id]
     }
 
     #[must_use]
     /// Return the total memory used (stack + heap) by this structure.
     pub fn memory_used(&self) -> usize {
-        size_of::<AffordanceTree<D>>()
-            + (self.points.len() * D + self.tests.len()) * size_of::<f32>()
+        size_of::<AffordanceTree<K>>()
+            + (self.points.len() * K + self.tests.len()) * size_of::<f32>()
     }
 }
 
@@ -410,28 +410,28 @@ where
 #[inline]
 /// Calculate the "true" median (halfway between two midpoints) and partition `points` about said
 /// median along axis `d`.
-fn median_partition<A: Axis, const D: usize>(
-    points: &mut [[A; D]],
-    d: usize,
+fn median_partition<A: Axis, const K: usize>(
+    points: &mut [[A; K]],
+    k: usize,
     rng: &mut impl Rng,
 ) -> A {
-    let k = points.len() / 2;
+    let target = points.len() / 2;
     let mut left = 0;
     let mut right = points.len();
 
     while right - left > 1 {
         // Hoare partition
-        let pivot_val = points[rng.gen_range(left..right)][d];
+        let pivot_val = points[rng.gen_range(left..right)][k];
         let mut i = left.overflowing_sub(1).0;
         let mut j = right;
         let pivot_idx = unsafe {
             loop {
                 i = i.overflowing_add(1).0;
-                while *points.get_unchecked(i).get_unchecked(d) < pivot_val {
+                while *points.get_unchecked(i).get_unchecked(k) < pivot_val {
                     i += 1;
                 }
                 j -= 1;
-                while *points.get_unchecked(j).get_unchecked(d) > pivot_val {
+                while *points.get_unchecked(j).get_unchecked(k) > pivot_val {
                     j -= 1;
                 }
 
@@ -443,25 +443,25 @@ fn median_partition<A: Axis, const D: usize>(
             }
         };
 
-        if k < pivot_idx {
+        if target < pivot_idx {
             right = pivot_idx;
         } else {
             left = pivot_idx;
         }
     }
 
-    let median_hi = points[left][d];
+    let median_hi = points[left][k];
     let median_lo = points[..points.len() / 2]
         .iter()
-        .map(|x| x[d])
+        .map(|x| x[k])
         .max_by(|a, b| a.partial_cmp(b).unwrap())
         .unwrap();
     median_lo.in_between(median_hi)
 }
 
-fn distsq<const D: usize>(a: [f32; D], b: [f32; D]) -> f32 {
+fn distsq<const K: usize>(a: [f32; K], b: [f32; K]) -> f32 {
     let mut total = 0.0f32;
-    for i in 0..D {
+    for i in 0..K {
         total += (a[i] - b[i]).powi(2);
     }
     total
