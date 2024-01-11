@@ -395,7 +395,7 @@ where
 
     fn affords<D: Distance<A, K>>(&self, pt: &[A; K], rsq_range: &(D::Output, D::Output)) -> bool {
         D::closest_distance_to_volume(self, pt) < rsq_range.1
-            && rsq_range.0 < D::furthest_distance_to_volume(self, pt)
+        // && rsq_range.0 < D::furthest_distance_to_volume(self, pt)
     }
 
     fn insert(&mut self, point: &[A; K]) {
