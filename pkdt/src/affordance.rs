@@ -51,16 +51,9 @@ pub struct AffordanceTree<const K: usize, A = f32, I = usize, D = SquaredEuclide
     /// This buffer is padded with one extra `usize` at the end with the maximum length of `points`
     /// for the sake of branchless computation.
     aff_starts: Box<[I]>,
-    affordances: Box<[AffordedPoint<K, A, R>]>,
+    affordances: Box<[[A; K]]>,
     aabbs: Box<[Volume<A, K>]>,
     _phantom: PhantomData<D>,
-}
-
-#[repr(C)]
-#[derive(Clone, Debug, PartialEq)]
-struct AffordedPoint<const K: usize, A, R> {
-    distance_to_cell: R,
-    point: [A; K],
 }
 
 #[repr(C)]
@@ -141,36 +134,22 @@ where
         let mut aabbs = Vec::with_capacity(n2);
         // Iteratively-transformed construction procedure
         loop {
-            if frame.points.len() <= 1 {
-                let cell_center = frame.points[0];
-
+            if let [cell_center] = *frame.points {
                 let mut aabb = Volume {
                     lower: cell_center,
                     upper: cell_center,
                 };
                 if cell_center[0].is_finite() {
-                    affordances.push(AffordedPoint {
-                        distance_to_cell: D::ZERO,
-                        point: cell_center,
-                    });
-                    let start = affordances.len();
+                    affordances.push(cell_center);
                     let center_furthest_distsq =
                         D::furthest_distance_to_volume(&frame.volume, &cell_center);
                     if r_range.0 < center_furthest_distsq {
                         // check for contacting the volume is already covered
                         affordances.extend(frame.possible_collisions.into_iter().map(|pt| {
                             aabb.insert(&pt);
-                            AffordedPoint {
-                                distance_to_cell: D::closest_distance_to_volume(&frame.volume, &pt),
-                                point: pt,
-                            }
+                            pt
                         }));
                     }
-                    affordances[start..].sort_unstable_by(|a, b| unsafe {
-                        a.distance_to_cell
-                            .partial_cmp(&b.distance_to_cell)
-                            .unwrap_unchecked()
-                    });
                 }
                 aff_starts.push(affordances.len().try_into().ok()?);
                 aabbs.push(aabb);
@@ -257,11 +236,7 @@ where
 
         // check affordance buffer
         for aff_pt in &self.affordances[range] {
-            if aff_pt.distance_to_cell > radius {
-                return false;
-            }
-
-            if D::distance(&aff_pt.point, center) <= radius {
+            if D::distance(&aff_pt, center) <= radius {
                 return true;
             }
         }
@@ -273,7 +248,7 @@ where
     /// Get the total memory used (stack + heap) by this structure, measured in bytes.
     pub fn memory_used(&self) -> usize {
         size_of::<Self>()
-            + self.affordances.len() * size_of::<AffordedPoint<K, A, R>>()
+            + self.affordances.len() * size_of::<[A; K]>()
             + self.aff_starts.len() * size_of::<I>()
     }
 
@@ -347,14 +322,6 @@ where
         let radii_sq = radii * radii;
         let infty = Simd::splat(A::INFINITY);
         while inbounds.any() {
-            let aff_dist_to_cell = unsafe { Simd::gather_select_ptr(aff_ptrs, inbounds, infty) };
-            inbounds &= aff_dist_to_cell <= radii_sq;
-            aff_ptrs = aff_ptrs.wrapping_add(Simd::splat(1));
-
-            if !inbounds.any() {
-                return false;
-            }
-
             let mut dists_sq = Simd::splat(SquaredEuclidean::ZERO);
             for center_set in centers {
                 let vals = unsafe { Simd::gather_select_ptr(aff_ptrs, inbounds, infty) };

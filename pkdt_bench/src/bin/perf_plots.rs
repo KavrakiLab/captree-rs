@@ -1,5 +1,6 @@
 #![feature(portable_simd)]
 
+use std::cmp::min;
 use std::error::Error;
 use std::fs::File;
 use std::hint::black_box;
@@ -50,11 +51,18 @@ fn do_row(
         .collect::<Vec<_>>();
 
     let (kdt, kdt_time) = stopwatch(|| kiddo::ImmutableKdTree::new_from_slice(&points));
-    let (_, kdt_total_q_time) = stopwatch(|| {
+    let (_, kdt_within_q_time) = stopwatch(|| {
         for seq_needle in &seq_needles {
             black_box(kdt.within_unsorted::<SquaredEuclidean>(seq_needle, QUERY_RADIUS_SQ));
         }
     });
+    let (_, kdt_nearest_q_time) = stopwatch(|| {
+        for seq_needle in &seq_needles {
+            black_box(kdt.nearest_one::<SquaredEuclidean>(seq_needle));
+        }
+    });
+
+    let kdt_total_q_time = min(kdt_within_q_time, kdt_nearest_q_time);
 
     let (pkdt, pkdt_time) = stopwatch(|| PkdTree::new(&points));
     let (_, pkdt_total_seq_q_time) = stopwatch(|| {
