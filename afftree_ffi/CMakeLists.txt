@@ -1,13 +1,13 @@
 if (CMAKE_BUILD_TYPE STREQUAL "Debug")
-    set(CARGO_CMD cargo build)
+    set(CARGO_CMD cargo build -p afftree_ffi)
     set(TARGET_DIR "debug")
 else ()
-    set(CARGO_CMD cargo build --release)
+    set(CARGO_CMD cargo build --release -p afftree_ffi)
     set(TARGET_DIR "release")
 endif ()
 
 if(ENABLE_LTO)
-    set(RUST_FLAGS "-Clinker-plugin-lto" "-Clinker=clang-17" "-Clink-arg=-fuse-ld=lld-17")
+    set(RUST_FLAGS "-Clinker-plugin-lto" "-Clinker=clang-17" "-Clink-arg=-fuse-ld=lld")
 endif()
 
 set(AFFTREE_LIB "${CMAKE_CURRENT_BINARY_DIR}/${TARGET_DIR}/libafftree_ffi.a")
