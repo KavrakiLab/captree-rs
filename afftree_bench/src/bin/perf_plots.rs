@@ -102,15 +102,15 @@ fn main() -> Result<(), Box<dyn Error>> {
 
 fn do_row(
     points: &[[f32; 3]],
-    tests: &Trace,
-    simd_tests: &SimdTrace<L>,
+    trace: &Trace,
+    simd_trace: &SimdTrace<L>,
     rsq_range: (f32, f32),
     f_construct: &mut File,
     f_query: &mut File,
 ) -> Result<(), Box<dyn Error>> {
     let (_kdt, kdt_time) = stopwatch(|| /*kiddo::ImmutableKdTree::new_from_slice(&points)*/ ());
     let (_, kdt_within_q_time) = stopwatch(|| {
-        for (_center, _radius) in tests {
+        for (_center, _radius) in trace {
             black_box(
                 // kdt.within_unsorted::<SquaredEuclidean>(center, radius.powi(2))
                 //     .is_empty(),
@@ -119,7 +119,7 @@ fn do_row(
         }
     });
     let (_, kdt_nearest_q_time) = stopwatch(|| {
-        for (_center, _radius) in tests {
+        for (_center, _radius) in trace {
             black_box(
                 // kdt.nearest_one::<SquaredEuclidean>(center).distance <= radius.powi(2)
                 (),
@@ -131,12 +131,12 @@ fn do_row(
 
     let (pkdt, pkdt_time) = stopwatch(|| PkdTree::new(&points));
     let (_, pkdt_total_seq_q_time) = stopwatch(|| {
-        for (center, radius) in tests {
+        for (center, radius) in trace {
             black_box(pkdt.might_collide(*center, radius.powi(2)));
         }
     });
     let (_, pkdt_total_simd_q_time) = stopwatch(|| {
-        for (centers, radii) in simd_tests {
+        for (centers, radii) in simd_trace {
             black_box(pkdt.might_collide_simd(centers, radii * radii));
         }
     });
@@ -145,12 +145,12 @@ fn do_row(
         AffordanceTree::<3>::new(&points, rsq_range, &mut rand::thread_rng()).unwrap()
     });
     let (_, afftree_total_seq_q_time) = stopwatch(|| {
-        for (center, radius) in tests {
+        for (center, radius) in trace {
             black_box(afftree.collides(center, radius.powi(2)));
         }
     });
     let (_, afftree_total_simd_q_time) = stopwatch(|| {
-        for (centers, radii) in simd_tests {
+        for (centers, radii) in simd_trace {
             black_box(afftree.collides_simd(centers, radii * radii));
         }
     });
@@ -163,15 +163,16 @@ fn do_row(
         pkdt_time.as_secs_f64(),
         afftree_time.as_secs_f64(),
     )?;
+    let trace_len = trace.len() as f64;
     writeln!(
         f_query,
         "{},{},{},{},{},{}",
         points.len(),
-        kdt_total_q_time.as_secs_f64() / N_TRIALS as f64,
-        pkdt_total_seq_q_time.as_secs_f64() / N_TRIALS as f64,
-        pkdt_total_simd_q_time.as_secs_f64() / N_TRIALS as f64,
-        afftree_total_seq_q_time.as_secs_f64() / N_TRIALS as f64,
-        afftree_total_simd_q_time.as_secs_f64() / N_TRIALS as f64,
+        kdt_total_q_time.as_secs_f64() / trace_len,
+        pkdt_total_seq_q_time.as_secs_f64() / trace_len,
+        pkdt_total_simd_q_time.as_secs_f64() / trace_len,
+        afftree_total_seq_q_time.as_secs_f64() / trace_len,
+        afftree_total_simd_q_time.as_secs_f64() / trace_len,
     )?;
 
     Ok(())
