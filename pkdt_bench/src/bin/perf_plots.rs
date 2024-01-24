@@ -3,15 +3,16 @@
 use std::cmp::min;
 use std::env::args;
 use std::error::Error;
-use std::fs::{read, File};
+use std::fs::File;
 use std::hint::black_box;
 use std::io::Write;
-use std::simd::Simd;
 
 #[allow(unused_imports)]
 use kiddo::SquaredEuclidean;
 use pkdt::{AffordanceTree, PkdTree};
-use pkdt_bench::stopwatch;
+use pkdt_bench::{
+    parse_pointcloud_csv, parse_trace_csv, simd_trace_new, stopwatch, SimdTrace, Trace,
+};
 use rand::seq::SliceRandom;
 use rand::Rng;
 use rand_chacha::rand_core::SeedableRng;
@@ -19,8 +20,6 @@ use rand_chacha::ChaCha20Rng;
 
 const N_TRIALS: usize = 100_000;
 const L: usize = 8;
-
-type FVector = Simd<f32, L>;
 
 const QUERY_RADIUS: f32 = 0.05;
 
@@ -42,17 +41,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             })
             .collect()
     } else {
-        let mut p: Vec<_> = std::str::from_utf8(&read(&args[1])?)?
-            .lines()
-            .map(|l| {
-                let mut split = l.split(',').flat_map(|s| s.parse::<f32>().ok());
-                Ok::<_, Box<dyn Error>>([
-                    split.next().ok_or("pc missing x")?,
-                    split.next().ok_or("pc missing y")?,
-                    split.next().ok_or("pc missing z")?,
-                ])
-            })
-            .collect::<Result<_, _>>()?;
+        let mut p = parse_pointcloud_csv(&args[1])?.to_vec();
         p.shuffle(&mut rng);
         p.truncate(1 << 16);
         p.into_boxed_slice()
@@ -72,39 +61,13 @@ fn main() -> Result<(), Box<dyn Error>> {
             })
             .collect()
     } else {
-        std::str::from_utf8(&read(&args[2])?)?
-            .lines()
-            .map(|l| {
-                let mut split = l.split(',').flat_map(|s| s.parse::<f32>().ok());
-                Ok::<_, Box<dyn Error>>((
-                    [
-                        split.next().ok_or("trace missing x")?,
-                        split.next().ok_or("trace missing y")?,
-                        split.next().ok_or("trace missing z")?,
-                    ],
-                    split.next().ok_or("trace missing r")?,
-                ))
-            })
-            .collect::<Result<_, _>>()?
+        parse_trace_csv(&args[2])?
     };
 
     println!("number of points: {}", points.len());
     println!("number of tests: {}", tests.len());
 
-    let simd_tests = tests
-        .chunks(L)
-        .map(|w| {
-            let mut centers = [[0.0; L]; 3];
-            let mut radii = [0.0; L];
-            for (l, ([x, y, z], r)) in w.iter().copied().enumerate() {
-                centers[0][l] = x;
-                centers[1][l] = y;
-                centers[2][l] = z;
-                radii[l] = r;
-            }
-            (centers.map(Simd::from_array), Simd::from_array(radii))
-        })
-        .collect::<Box<_>>();
+    let simd_tests = simd_trace_new(&tests);
 
     let rsq_range = (
         tests
@@ -139,8 +102,8 @@ fn main() -> Result<(), Box<dyn Error>> {
 
 fn do_row(
     points: &[[f32; 3]],
-    tests: &[([f32; 3], f32)],
-    simd_tests: &[([FVector; 3], FVector)],
+    tests: &Trace,
+    simd_tests: &SimdTrace<L>,
     rsq_range: (f32, f32),
     f_construct: &mut File,
     f_query: &mut File,

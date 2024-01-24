@@ -2,6 +2,7 @@
 
 use std::{
     env,
+    error::Error,
     path::Path,
     simd::{LaneCount, Simd, SupportedLaneCount},
     time::{Duration, Instant},
@@ -143,4 +144,76 @@ pub fn stopwatch<F: FnOnce() -> R, R>(f: F) -> (R, Duration) {
     let tic = Instant::now();
     let r = f();
     (r, Instant::now().duration_since(tic))
+}
+
+pub fn parse_pointcloud_csv(
+    p: impl AsRef<Path>,
+) -> Result<Box<[[f32; 3]]>, Box<dyn std::error::Error>> {
+    std::str::from_utf8(&std::fs::read(&p)?)?
+        .lines()
+        .map(|l| {
+            let mut split = l.split(',').flat_map(|s| s.parse::<f32>().ok());
+            Ok::<_, Box<dyn Error>>([
+                split.next().ok_or("trace missing x")?,
+                split.next().ok_or("trace missing y")?,
+                split.next().ok_or("trace missing z")?,
+            ])
+        })
+        .collect()
+}
+
+pub type Trace = [([f32; 3], f32)];
+
+pub fn parse_trace_csv(p: impl AsRef<Path>) -> Result<Box<Trace>, Box<dyn std::error::Error>> {
+    std::str::from_utf8(&std::fs::read(&p)?)?
+        .lines()
+        .map(|l| {
+            let mut split = l.split(',').flat_map(|s| s.parse::<f32>().ok());
+            Ok::<_, Box<dyn Error>>((
+                [
+                    split.next().ok_or("trace missing x")?,
+                    split.next().ok_or("trace missing y")?,
+                    split.next().ok_or("trace missing z")?,
+                ],
+                split.next().ok_or("trace missing r")?,
+            ))
+        })
+        .collect()
+}
+
+pub type SimdTrace<const L: usize> = [([Simd<f32, L>; 3], Simd<f32, L>)];
+
+pub fn simd_trace_new<const L: usize>(trace: &Trace) -> Box<SimdTrace<L>>
+where
+    LaneCount<L>: SupportedLaneCount,
+{
+    trace
+        .chunks(L)
+        .map(|w| {
+            let mut centers = [[0.0; L]; 3];
+            let mut radii = [0.0; L];
+            for (l, ([x, y, z], r)) in w.iter().copied().enumerate() {
+                centers[0][l] = x;
+                centers[1][l] = y;
+                centers[2][l] = z;
+                radii[l] = r;
+            }
+            (centers.map(Simd::from_array), Simd::from_array(radii))
+        })
+        .collect()
+}
+
+pub fn trace_rsq_range(t: &Trace) -> (f32, f32) {
+    (
+        t.iter()
+            .map(|x| x.1)
+            .min_by(|a, b| a.partial_cmp(b).unwrap())
+            .unwrap_or(0.0)
+            .powi(2),
+        t.iter()
+            .map(|x| x.1)
+            .max_by(|a, b| a.partial_cmp(b).unwrap())
+            .unwrap_or(0.0)
+            .powi(2),
+    )
 }
