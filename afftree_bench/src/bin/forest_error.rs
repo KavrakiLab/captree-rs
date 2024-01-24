@@ -1,8 +1,8 @@
 use std::{env, path::Path};
 
+use afftree::PkdForest;
+use afftree_bench::{load_pointcloud, make_needles};
 use kiddo::SquaredEuclidean;
-use pkdt::PkdForest;
-use pkdt_bench::{load_pointcloud, make_needles};
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 

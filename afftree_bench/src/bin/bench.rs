@@ -2,9 +2,9 @@
 
 use std::{hint::black_box, simd::Simd};
 
+use afftree::{AffordanceTree, PkdForest};
+use afftree_bench::{get_points, stopwatch};
 use kiddo::SquaredEuclidean;
-use pkdt::{AffordanceTree, PkdForest};
-use pkdt_bench::{get_points, stopwatch};
 use rand::{seq::SliceRandom, Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 
@@ -23,7 +23,7 @@ fn main() {
 
     println!("{} points", points.len());
     println!("generating PKDT...");
-    let (kdt, kdt_gen_time) = stopwatch(|| pkdt::PkdTree::new(&points));
+    let (kdt, kdt_gen_time) = stopwatch(|| afftree::PkdTree::new(&points));
     println!("generated tree in {:?}", kdt_gen_time);
 
     println!("generating competitor's KDT");
@@ -34,7 +34,7 @@ fn main() {
 
     println!("testing for performance...");
 
-    let (seq_needles, simd_needles) = pkdt_bench::make_needles(&mut rng, n_trials);
+    let (seq_needles, simd_needles) = afftree_bench::make_needles(&mut rng, n_trials);
     // let (seq_needles, simd_needles) = pkdt_bench::make_correlated_needles(&mut rng, n_trials);
 
     bench_affordance(&points, &simd_needles, &seq_needles, &mut rng);

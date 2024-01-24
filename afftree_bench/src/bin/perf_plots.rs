@@ -7,12 +7,12 @@ use std::fs::File;
 use std::hint::black_box;
 use std::io::Write;
 
-#[allow(unused_imports)]
-use kiddo::SquaredEuclidean;
-use pkdt::{AffordanceTree, PkdTree};
-use pkdt_bench::{
+use afftree::{AffordanceTree, PkdTree};
+use afftree_bench::{
     parse_pointcloud_csv, parse_trace_csv, simd_trace_new, stopwatch, SimdTrace, Trace,
 };
+#[allow(unused_imports)]
+use kiddo::SquaredEuclidean;
 use rand::seq::SliceRandom;
 use rand::Rng;
 use rand_chacha::rand_core::SeedableRng;

@@ -2,9 +2,9 @@
 
 use std::simd::Simd;
 
+use afftree::AffordanceTree;
+use afftree_bench::{dist, parse_pointcloud_csv, parse_trace_csv, trace_rsq_range};
 use kiddo::SquaredEuclidean;
-use pkdt::AffordanceTree;
-use pkdt_bench::{dist, parse_pointcloud_csv, parse_trace_csv, trace_rsq_range};
 use rand::{seq::SliceRandom, Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 
@@ -53,7 +53,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut rng = ChaCha20Rng::seed_from_u64(27071);
 
-    let kdt = pkdt::PkdTree::new(&points);
+    let kdt = afftree::PkdTree::new(&points);
     let mut kiddo_kdt = kiddo::KdTree::new();
     for pt in points.iter() {
         kiddo_kdt.add(pt, 0);

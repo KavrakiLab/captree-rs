@@ -1,5 +1,5 @@
 [package]
-name = "pkdt_bench"
+name = "afftree_bench"
 version = "0.1.0"
 edition = "2021"
 
@@ -7,7 +7,7 @@ edition = "2021"
 
 [dependencies]
 hdf5 = { git = "https://github.com/aldanor/hdf5-rust", rev = "26046fb" }
-pkdt = {version = "0.1.0", path = "../pkdt"}
+afftree = {version = "0.1.0", path = "../afftree"}
 kiddo = {version = "4.0.0", features = ["simd"]}
 rand = "0.8.5"
 rand_chacha = "0.3.1"

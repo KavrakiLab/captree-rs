@@ -2,9 +2,9 @@
 
 use std::{cmp::min, hint::black_box, simd::Simd};
 
+use afftree::AffordanceTree;
+use afftree_bench::{make_needles, stopwatch};
 use kiddo::{ImmutableKdTree, SquaredEuclidean};
-use pkdt::AffordanceTree;
-use pkdt_bench::{make_needles, stopwatch};
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 

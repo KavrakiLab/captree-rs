@@ -6,8 +6,8 @@ use std::{
     simd::{LaneCount, SupportedLaneCount},
 };
 
+use afftree_bench::{dist, load_pointcloud, make_needles};
 use kiddo::SquaredEuclidean;
-use pkdt_bench::{dist, load_pointcloud, make_needles};
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 
@@ -47,7 +47,7 @@ pub fn measure_error<const D: usize, const L: usize>(
 {
     let sp_clone = Box::from(points);
 
-    let kdt = pkdt::PkdTree::new(&sp_clone);
+    let kdt = afftree::PkdTree::new(&sp_clone);
     let mut kiddo_kdt = kiddo::KdTree::new();
     for pt in sp_clone.iter() {
         kiddo_kdt.add(pt, 0);
