@@ -10,7 +10,7 @@ if(ENABLE_LTO)
     set(RUST_FLAGS "-Clinker-plugin-lto" "-Clinker=clang-17" "-Clink-arg=-fuse-ld=lld-17")
 endif()
 
-set(AFFTREE_LIB "${CMAKE_CURRENT_BINARY_DIR}/${TARGET_DIR}/libafftree.a")
+set(AFFTREE_LIB "${CMAKE_CURRENT_BINARY_DIR}/${TARGET_DIR}/libafftree_ffi.a")
 
 set(AFFTREE_CXX "${CMAKE_CURRENT_BINARY_DIR}/afftree.cc")
 add_library(afftree STATIC ${AFFTREE_CXX})
