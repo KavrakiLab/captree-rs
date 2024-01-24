@@ -17,8 +17,8 @@ add_library(afftree STATIC ${AFFTREE_CXX})
 add_custom_command(
     OUTPUT ${AFFTREE_CXX}
     COMMAND CARGO_TARGET_DIR=${CMAKE_CURRENT_BINARY_DIR} RUSTFLAGS="${RUST_FLAGS}" ${CARGO_CMD}
-    COMMAND cp ${CMAKE_CURRENT_BINARY_DIR}/cxxbridge/afftree/src/lib.rs.cc ${AFFTREE_CXX}
-    COMMAND cp ${CMAKE_CURRENT_BINARY_DIR}/cxxbridge/afftree/src/lib.rs.h ${CMAKE_CURRENT_BINARY_DIR}/afftree.h
+    COMMAND cp ${CMAKE_CURRENT_BINARY_DIR}/cxxbridge/afftree_ffi/src/lib.rs.cc ${AFFTREE_CXX}
+    COMMAND cp ${CMAKE_CURRENT_BINARY_DIR}/cxxbridge/afftree_ffi/src/lib.rs.h ${CMAKE_CURRENT_BINARY_DIR}/afftree.h
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
 )
 
