@@ -8,17 +8,16 @@ use std::{
     time::{Duration, Instant},
 };
 
-use hdf5::{File, Result};
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 
-pub fn get_points(n_points_if_no_cloud: usize) -> Vec<[f32; 3]> {
+pub fn get_points(n_points_if_no_cloud: usize) -> Box<[[f32; 3]]> {
     let args: Vec<String> = env::args().collect();
     let mut rng = ChaCha20Rng::seed_from_u64(2707);
 
     if args.len() > 1 {
         println!("Loading pointcloud from {}", &args[1]);
-        load_pointcloud(Path::new(&args[1])).unwrap()
+        parse_pointcloud_csv(&args[1]).unwrap()
     } else {
         println!("No pointcloud file! Using N={n_points_if_no_cloud}");
         println!("generating random points...");
@@ -118,18 +117,6 @@ where
     assert_eq!(seq_needles.len(), simd_needles.len() * L);
 
     (seq_needles, simd_needles)
-}
-
-/// Load a pointcloud as a vector of 3-d float arrays from a HDF5 file located at `pointcloud_path`.
-pub fn load_pointcloud(pointcloud_path: impl AsRef<Path>) -> Result<Vec<[f32; 3]>> {
-    let file = File::open(pointcloud_path)?;
-    let dataset = file.dataset("pointcloud/points")?;
-    let points = dataset.read_2d::<f32>()?;
-    Ok(points
-        .rows()
-        .into_iter()
-        .map(|r| [r[0], r[1], r[2]])
-        .collect())
 }
 
 pub fn dist<const D: usize>(a: [f32; D], b: [f32; D]) -> f32 {

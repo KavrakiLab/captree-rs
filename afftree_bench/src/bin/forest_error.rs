@@ -1,7 +1,5 @@
-use std::{env, path::Path};
-
 use afftree::PkdForest;
-use afftree_bench::{load_pointcloud, make_needles};
+use afftree_bench::{get_points, make_needles};
 use kiddo::SquaredEuclidean;
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
@@ -9,24 +7,8 @@ use rand_chacha::ChaCha20Rng;
 const N: usize = 1 << 12;
 
 fn main() {
-    let args: Vec<String> = env::args().collect();
     let mut rng = ChaCha20Rng::seed_from_u64(2707);
-    let starting_points: Vec<[f32; 3]> = if args.len() > 1 {
-        eprintln!("Loading pointcloud from {}", &args[1]);
-        load_pointcloud(Path::new(&args[1])).unwrap()
-    } else {
-        eprintln!("No pointcloud file! Using N={N}, D=3");
-        eprintln!("generating random points...");
-        (0..N)
-            .map(|_| {
-                [
-                    rng.gen_range::<f32, _>(0.0..1.0),
-                    rng.gen_range::<f32, _>(0.0..1.0),
-                    rng.gen_range::<f32, _>(0.0..1.0),
-                ]
-            })
-            .collect::<Vec<[f32; 3]>>()
-    };
+    let starting_points = get_points(N);
 
     err_forest::<1>(&starting_points, &mut rng);
     err_forest::<2>(&starting_points, &mut rng);

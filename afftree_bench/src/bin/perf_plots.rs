@@ -23,9 +23,14 @@ const L: usize = 8;
 
 const QUERY_RADIUS: f32 = 0.05;
 
+struct Benchmark<'a> {
+    seq: &'a Trace,
+    simd: &'a SimdTrace<L>,
+    f_query: File,
+}
+
 fn main() -> Result<(), Box<dyn Error>> {
     let mut f_construct = File::create("construct_time.csv")?;
-    let mut f_query = File::create("query_time.csv")?;
 
     let args: Vec<String> = args().collect();
 
@@ -47,7 +52,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         p.into_boxed_slice()
     };
 
-    let tests: Box<[([f32; 3], f32)]> = if args.len() < 3 {
+    let all_trace: Box<[([f32; 3], f32)]> = if args.len() < 3 {
         (0..N_TRIALS)
             .map(|_| {
                 (
@@ -56,7 +61,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                         rng.gen_range(0.0..1.0),
                         rng.gen_range(0.0..1.0),
                     ],
-                    rng.gen_range(QUERY_RADIUS..=QUERY_RADIUS),
+                    rng.gen_range(0.0..=QUERY_RADIUS),
                 )
             })
             .collect()
@@ -64,19 +69,14 @@ fn main() -> Result<(), Box<dyn Error>> {
         parse_trace_csv(&args[2])?
     };
 
-    println!("number of points: {}", points.len());
-    println!("number of tests: {}", tests.len());
-
-    let simd_tests = simd_trace_new(&tests);
-
     let rsq_range = (
-        tests
+        all_trace
             .iter()
             .map(|x| x.1)
             .min_by(|a, b| a.partial_cmp(b).unwrap())
             .ok_or("no points")?
             .powi(2),
-        tests
+        all_trace
             .iter()
             .map(|x| x.1)
             .max_by(|a, b| a.partial_cmp(b).unwrap())
@@ -84,16 +84,52 @@ fn main() -> Result<(), Box<dyn Error>> {
             .powi(2),
     );
 
+    println!("number of points: {}", points.len());
+    println!("number of tests: {}", all_trace.len());
     println!("radius-squared range: {rsq_range:?}");
+
+    let afftree = AffordanceTree::<3>::new(&points, rsq_range, &mut rand::thread_rng()).unwrap();
+
+    let collide_trace: Box<Trace> = all_trace
+        .iter()
+        .filter(|(center, r)| afftree.collides(center, *r))
+        .copied()
+        .collect();
+
+    let no_collide_trace: Box<Trace> = all_trace
+        .iter()
+        .filter(|(center, r)| !afftree.collides(center, *r))
+        .copied()
+        .collect();
+
+    let all_simd_trace = simd_trace_new(&all_trace);
+    let collide_simd_trace = simd_trace_new(&collide_trace);
+    let no_collide_simd_trace = simd_trace_new(&no_collide_trace);
+
+    let mut benchmarks = [
+        Benchmark {
+            seq: &all_trace,
+            simd: &all_simd_trace,
+            f_query: File::create("mixed.csv")?,
+        },
+        Benchmark {
+            seq: &collide_trace,
+            simd: &collide_simd_trace,
+            f_query: File::create("collides.csv")?,
+        },
+        Benchmark {
+            seq: &no_collide_trace,
+            simd: &no_collide_simd_trace,
+            f_query: File::create("no_collides.csv")?,
+        },
+    ];
 
     for n_points in (1 << 8..=points.len()).step_by(1 << 8) {
         do_row(
             &points[..n_points],
-            &tests,
-            &simd_tests,
+            &mut benchmarks,
             rsq_range,
             &mut f_construct,
-            &mut f_query,
         )?;
     }
 
@@ -102,59 +138,17 @@ fn main() -> Result<(), Box<dyn Error>> {
 
 fn do_row(
     points: &[[f32; 3]],
-    trace: &Trace,
-    simd_trace: &SimdTrace<L>,
+    benchmarks: &mut [Benchmark],
     rsq_range: (f32, f32),
     f_construct: &mut File,
-    f_query: &mut File,
 ) -> Result<(), Box<dyn Error>> {
-    let (_kdt, kdt_time) = stopwatch(|| /*kiddo::ImmutableKdTree::new_from_slice(&points)*/ ());
-    let (_, kdt_within_q_time) = stopwatch(|| {
-        for (_center, _radius) in trace {
-            black_box(
-                // kdt.within_unsorted::<SquaredEuclidean>(center, radius.powi(2))
-                //     .is_empty(),
-                (),
-            );
-        }
-    });
-    let (_, kdt_nearest_q_time) = stopwatch(|| {
-        for (_center, _radius) in trace {
-            black_box(
-                // kdt.nearest_one::<SquaredEuclidean>(center).distance <= radius.powi(2)
-                (),
-            );
-        }
-    });
-
-    let kdt_total_q_time = min(kdt_within_q_time, kdt_nearest_q_time);
+    let (kdt, kdt_time) = stopwatch(|| kiddo::ImmutableKdTree::new_from_slice(&points));
 
     let (pkdt, pkdt_time) = stopwatch(|| PkdTree::new(&points));
-    let (_, pkdt_total_seq_q_time) = stopwatch(|| {
-        for (center, radius) in trace {
-            black_box(pkdt.might_collide(*center, radius.powi(2)));
-        }
-    });
-    let (_, pkdt_total_simd_q_time) = stopwatch(|| {
-        for (centers, radii) in simd_trace {
-            black_box(pkdt.might_collide_simd(centers, radii * radii));
-        }
-    });
 
     let (afftree, afftree_time) = stopwatch(|| {
         AffordanceTree::<3>::new(&points, rsq_range, &mut rand::thread_rng()).unwrap()
     });
-    let (_, afftree_total_seq_q_time) = stopwatch(|| {
-        for (center, radius) in trace {
-            black_box(afftree.collides(center, radius.powi(2)));
-        }
-    });
-    let (_, afftree_total_simd_q_time) = stopwatch(|| {
-        for (centers, radii) in simd_trace {
-            black_box(afftree.collides_simd(centers, radii * radii));
-        }
-    });
-
     writeln!(
         f_construct,
         "{},{},{},{}",
@@ -163,17 +157,62 @@ fn do_row(
         pkdt_time.as_secs_f64(),
         afftree_time.as_secs_f64(),
     )?;
-    let trace_len = trace.len() as f64;
-    writeln!(
+
+    for Benchmark {
+        seq: trace,
+        simd: simd_trace,
         f_query,
-        "{},{},{},{},{},{}",
-        points.len(),
-        kdt_total_q_time.as_secs_f64() / trace_len,
-        pkdt_total_seq_q_time.as_secs_f64() / trace_len,
-        pkdt_total_simd_q_time.as_secs_f64() / trace_len,
-        afftree_total_seq_q_time.as_secs_f64() / trace_len,
-        afftree_total_simd_q_time.as_secs_f64() / trace_len,
-    )?;
+    } in benchmarks
+    {
+        let (_, kdt_within_q_time) = stopwatch(|| {
+            for (center, radius) in trace.iter() {
+                black_box(
+                    kdt.within_unsorted::<SquaredEuclidean>(center, radius.powi(2))
+                        .is_empty(),
+                );
+            }
+        });
+        let (_, kdt_nearest_q_time) = stopwatch(|| {
+            for (center, radius) in trace.iter() {
+                black_box(kdt.nearest_one::<SquaredEuclidean>(center).distance <= radius.powi(2));
+            }
+        });
+        let kdt_total_q_time = min(kdt_within_q_time, kdt_nearest_q_time);
+
+        let (_, pkdt_total_seq_q_time) = stopwatch(|| {
+            for (center, radius) in trace.iter() {
+                black_box(pkdt.might_collide(*center, radius.powi(2)));
+            }
+        });
+        let (_, pkdt_total_simd_q_time) = stopwatch(|| {
+            for (centers, radii) in simd_trace.iter() {
+                black_box(pkdt.might_collide_simd(centers, radii * radii));
+            }
+        });
+        let (_, afftree_total_seq_q_time) = stopwatch(|| {
+            for (center, radius) in trace.iter() {
+                black_box(afftree.collides(center, radius.powi(2)));
+            }
+        });
+        let (_, afftree_total_simd_q_time) = stopwatch(|| {
+            for (centers, radii) in simd_trace.iter() {
+                black_box(afftree.collides_simd(centers, radii * radii));
+            }
+        });
+
+        let trace_len = trace.len() as f64;
+        writeln!(
+            f_query,
+            "{},{},{},{},{},{},{}",
+            points.len(),
+            trace.len(),
+            kdt_total_q_time.as_secs_f64() / trace_len,
+            pkdt_total_seq_q_time.as_secs_f64() / trace_len,
+            pkdt_total_simd_q_time.as_secs_f64() / trace_len,
+            afftree_total_seq_q_time.as_secs_f64() / trace_len,
+            afftree_total_simd_q_time.as_secs_f64() / trace_len,
+        )?;
+    }
 
     Ok(())
 }

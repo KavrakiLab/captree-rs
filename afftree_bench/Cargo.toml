@@ -6,7 +6,6 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-hdf5 = { git = "https://github.com/aldanor/hdf5-rust", rev = "26046fb" }
 afftree = {version = "0.1.0", path = "../afftree"}
 kiddo = {version = "4.0.0", features = ["simd"]}
 rand = "0.8.5"
