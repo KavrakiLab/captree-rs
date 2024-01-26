@@ -11,6 +11,8 @@ use std::{
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 
+use rand_distr::{Distribution, Normal};
+
 pub fn get_points(n_points_if_no_cloud: usize) -> Box<[[f32; 3]]> {
     let args: Vec<String> = env::args().collect();
     let mut rng = ChaCha20Rng::seed_from_u64(2707);
@@ -203,4 +205,10 @@ pub fn trace_rsq_range(t: &Trace) -> (f32, f32) {
             .unwrap_or(0.0)
             .powi(2),
     )
+}
+
+pub fn fuzz_pointcloud(t: &mut [[f32; 3]], stddev: f32, rng: &mut impl Rng) {
+    let normal = Normal::new(0.0, stddev).unwrap();
+    t.iter_mut()
+        .for_each(|p| p.iter_mut().for_each(|x| *x += normal.sample(rng)))
 }

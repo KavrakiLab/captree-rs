@@ -10,6 +10,7 @@ afftree = {version = "0.1.0", path = "../afftree"}
 kiddo = {version = "4.0.0", features = ["simd"]}
 rand = "0.8.5"
 rand_chacha = "0.3.1"
+rand_distr = "0.4.3"
 
 [profile.release]
 lto = true

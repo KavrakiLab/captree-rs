@@ -9,7 +9,8 @@ use std::io::Write;
 
 use afftree::{AffordanceTree, PkdTree};
 use afftree_bench::{
-    parse_pointcloud_csv, parse_trace_csv, simd_trace_new, stopwatch, SimdTrace, Trace,
+    fuzz_pointcloud, parse_pointcloud_csv, parse_trace_csv, simd_trace_new, stopwatch, SimdTrace,
+    Trace,
 };
 #[allow(unused_imports)]
 use kiddo::SquaredEuclidean;
@@ -47,6 +48,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             .collect()
     } else {
         let mut p = parse_pointcloud_csv(&args[1])?.to_vec();
+        fuzz_pointcloud(&mut p, 0.001, &mut rng);
         p.shuffle(&mut rng);
         p.truncate(1 << 16);
         p.into_boxed_slice()
