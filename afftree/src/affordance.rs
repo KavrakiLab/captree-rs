@@ -321,7 +321,10 @@ where
         // scan through affordance buffer, searching for a collision
         let radii_sq = radii * radii;
         let infty = Simd::splat(A::INFINITY);
-        while inbounds.any() {
+        while {
+            let ib = inbounds.to_bitmask();
+            (ib & (ib - 1)) != 0 // more than one element in `inbounds`
+        } {
             let mut dists_sq = Simd::splat(SquaredEuclidean::ZERO);
             for center_set in centers {
                 let vals = unsafe { Simd::gather_select_ptr(aff_ptrs, inbounds, infty) };
@@ -338,7 +341,21 @@ where
             inbounds &= aff_ptrs.simd_lt(end_ptrs);
         }
 
-        false
+        inbounds.any() && {
+            let ib = inbounds.to_bitmask();
+            let ib_idx = ib.trailing_zeros() as usize;
+            let aff_ptr: *const [A; K] = aff_ptrs[ib_idx].cast();
+            let end_ptr: *const [A; K] = end_ptrs[ib_idx].cast();
+            let slice = unsafe { std::slice::from_ptr_range(aff_ptr..end_ptr) };
+            let mut center = [A::INFINITY; K];
+            for k in 0..K {
+                center[k] = centers[k][ib_idx];
+            }
+            let rsq = radii_sq[ib_idx];
+            slice
+                .iter()
+                .any(|pt| SquaredEuclidean::distance(&center, pt) <= rsq)
+        }
     }
 }
 

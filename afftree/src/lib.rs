@@ -1,6 +1,7 @@
 //! Efficient, branchless nearest-neighbor trees for robot collision checking.
 
 #![feature(portable_simd)]
+#![feature(slice_from_ptr_range)]
 #![warn(clippy::pedantic)]
 
 use core::{
