@@ -3,7 +3,7 @@
 
 use std::{
     marker::PhantomData,
-    mem::size_of,
+    mem::{align_of, size_of},
     ops::{AddAssign, Mul, Sub},
     simd::{
         cmp::{SimdPartialEq, SimdPartialOrd},
@@ -18,6 +18,14 @@ use crate::{
     forward_pass, forward_pass_simd, median_partition, Axis, AxisSimd, Distance, Index, IndexSimd,
     SquaredEuclidean,
 };
+
+const MAX_SIMD_SIZE_BYTES: usize = 512 / 8;
+const MAX_LANE_COUNT: usize = MAX_SIMD_SIZE_BYTES / size_of::<f32>();
+
+#[repr(C)]
+#[repr(align(64))]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+struct CacheAlign<A>([A; MAX_LANE_COUNT]);
 
 #[derive(Clone, Debug, PartialEq)]
 #[allow(clippy::module_name_repetitions)]
@@ -51,7 +59,7 @@ pub struct AffordanceTree<const K: usize, A = f32, I = usize, D = SquaredEuclide
     /// This buffer is padded with one extra `usize` at the end with the maximum length of `points`
     /// for the sake of branchless computation.
     aff_starts: Box<[I]>,
-    affordances: Box<[[A; K]]>,
+    affordances: [Box<[CacheAlign<A>]>; K],
     aabbs: Box<[Volume<A, K>]>,
     _phantom: PhantomData<D>,
 }
@@ -116,7 +124,7 @@ where
         // hack: just pad with infinity to make it a power of 2
         let mut points2 = vec![[A::INFINITY; K]; n2].into_boxed_slice();
         points2[..points.len()].copy_from_slice(points);
-        let mut affordances = Vec::with_capacity(n2);
+        let mut affordances = [0; K].map(|_| Vec::with_capacity(n2));
         let mut aff_starts = Vec::with_capacity(n2 + 1);
 
         let mut stack = Vec::with_capacity(n2.ilog2() as usize);
@@ -140,18 +148,25 @@ where
                     upper: cell_center,
                 };
                 if cell_center[0].is_finite() {
-                    affordances.push(cell_center);
-                    let center_furthest_distsq =
-                        D::furthest_distance_to_volume(&frame.volume, &cell_center);
-                    if r_range.0 < center_furthest_distsq {
-                        // check for contacting the volume is already covered
-                        affordances.extend(frame.possible_collisions.into_iter().map(|pt| {
-                            aabb.insert(&pt);
-                            pt
-                        }));
+                    for k in 0..K {
+                        let mut arr = CacheAlign([A::INFINITY; MAX_LANE_COUNT]);
+                        arr.0[0] = cell_center[k];
+                        let mut j = 1;
+                        for pt in &frame.possible_collisions {
+                            arr.0[j] = pt[k];
+                            j = j + 1;
+                            if j == MAX_LANE_COUNT {
+                                affordances[k].push(arr);
+                                j = 0;
+                            }
+                        }
+                        affordances[k].push(arr);
+                    }
+                    for pt in frame.possible_collisions {
+                        aabb.insert(&pt);
                     }
                 }
-                aff_starts.push(affordances.len().try_into().ok()?);
+                aff_starts.push(affordances[0].len().try_into().ok()?);
                 aabbs.push(aabb);
 
                 let Some(f) = stack.pop() else { break };
@@ -202,7 +217,7 @@ where
             tests,
             rsq_range: r_range,
             aff_starts: aff_starts.into_boxed_slice(),
-            affordances: affordances.into_boxed_slice(),
+            affordances: affordances.map(|x| x.into_boxed_slice()),
             aabbs: aabbs.into_boxed_slice(),
             _phantom: PhantomData,
         })
@@ -235,9 +250,15 @@ where
         };
 
         // check affordance buffer
-        for aff_pt in &self.affordances[range] {
-            if D::distance(&aff_pt, center) <= radius {
-                return true;
+        for i in range {
+            for j in 0..MAX_LANE_COUNT {
+                let mut aff_pt = [A::INFINITY; K];
+                for k in 0..K {
+                    aff_pt[k] = self.affordances[k][i].0[j];
+                }
+                if D::distance(&aff_pt, center) <= radius {
+                    return true;
+                }
             }
         }
 
@@ -282,6 +303,10 @@ where
         Mask<isize, L>: From<<Simd<A, L> as SimdPartialEq>::Mask>,
         A: Axis + AxisSimd<<Simd<A, L> as SimdPartialEq>::Mask>,
     {
+        assert!(
+            align_of::<CacheAlign<A>>() >= align_of::<Simd<A, L>>(),
+            "SIMD vector must be less aligned than internal values",
+        );
         let zs = forward_pass_simd(&self.tests, centers);
 
         let mut inbounds = Mask::splat(true);
@@ -309,53 +334,45 @@ where
 
         // retrieve start/end pointers for the affordance buffer
         let start_ptrs = Simd::splat(self.aff_starts.as_ptr()).wrapping_offset(zs);
-        let starts = unsafe { I::to_simd_usize_unchecked(Simd::gather_ptr(start_ptrs)) };
+        let starts = unsafe { I::to_simd_usize_unchecked(Simd::gather_ptr(start_ptrs)) }.to_array();
         let ends = unsafe {
             I::to_simd_usize_unchecked(Simd::gather_ptr(start_ptrs.wrapping_add(Simd::splat(1))))
-        };
-
-        let points_base = Simd::splat(self.affordances.as_ref().as_ptr());
-        let mut aff_ptrs = points_base.wrapping_add(starts).cast::<A>();
-        let end_ptrs = points_base.wrapping_add(ends).cast::<A>();
-
-        // scan through affordance buffer, searching for a collision
-        let radii_sq = radii * radii;
-        let infty = Simd::splat(A::INFINITY);
-        while {
-            let ib = inbounds.to_bitmask();
-            (ib & (ib - 1)) != 0 // more than one element in `inbounds`
-        } {
-            let mut dists_sq = Simd::splat(SquaredEuclidean::ZERO);
-            for center_set in centers {
-                let vals = unsafe { Simd::gather_select_ptr(aff_ptrs, inbounds, infty) };
-                let diffs = *center_set - vals;
-                dists_sq += diffs * diffs;
-                aff_ptrs = aff_ptrs.wrapping_add(Simd::splat(1));
-            }
-
-            // is one ball in collision with a point?
-            if A::any(dists_sq.simd_le(radii_sq)) {
-                return true;
-            }
-
-            inbounds &= aff_ptrs.simd_lt(end_ptrs);
         }
+        .to_array();
 
-        inbounds.any() && {
-            let ib = inbounds.to_bitmask();
-            let ib_idx = ib.trailing_zeros() as usize;
-            let aff_ptr: *const [A; K] = aff_ptrs[ib_idx].cast();
-            let end_ptr: *const [A; K] = end_ptrs[ib_idx].cast();
-            let slice = unsafe { std::slice::from_ptr_range(aff_ptr..end_ptr) };
-            let mut center = [A::INFINITY; K];
-            for k in 0..K {
-                center[k] = centers[k][ib_idx];
-            }
-            let rsq = radii_sq[ib_idx];
-            slice
-                .iter()
-                .any(|pt| SquaredEuclidean::distance(&center, pt) <= rsq)
-        }
+        starts
+            .into_iter()
+            .zip(ends)
+            .zip(inbounds.to_array())
+            .filter_map(|((s, e), i)| i.then_some(s..e))
+            .enumerate()
+            .any(|(j, range)| {
+                let mut n_center = [Simd::splat(SquaredEuclidean::ZERO); K];
+                for k in 0..K {
+                    n_center[k] = Simd::splat(centers[k][j]);
+                }
+                let rs = Simd::splat(radii[j]);
+                let rs_sq = rs * rs;
+                for seg_id in range {
+                    for i in (0..MAX_LANE_COUNT).step_by(L) {
+                        let mut dists_sq = Simd::splat(SquaredEuclidean::ZERO);
+                        for k in 0..K {
+                            let vals = unsafe {
+                                // SAFETY: We checked for alignment at the start of the function.
+                                *(&self.affordances[k][seg_id].0[i] as *const A)
+                                    .cast::<Simd<A, L>>()
+                            };
+                            let diff = vals - centers[k];
+                            dists_sq += diff * diff;
+                        }
+                        if A::any(dists_sq.simd_le(rs_sq)) {
+                            return true;
+                        }
+                    }
+                }
+
+                false
+            })
     }
 }
 

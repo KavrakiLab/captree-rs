@@ -29,6 +29,7 @@ use rand::{thread_rng, Rng};
 pub trait Axis: PartialOrd + Copy + Sub<Output = Self> + Add<Output = Self> {
     const INFINITY: Self;
     const NEG_INFINITY: Self;
+    const SIZE: usize;
 
     #[must_use]
     fn is_finite(self) -> bool;
@@ -79,6 +80,7 @@ macro_rules! impl_axis {
         impl Axis for $t {
             const INFINITY: Self = <$t>::INFINITY;
             const NEG_INFINITY: Self = <$t>::NEG_INFINITY;
+            const SIZE: usize = size_of::<Self>();
 
             fn is_finite(self) -> bool {
                 <$t>::is_finite(self)
