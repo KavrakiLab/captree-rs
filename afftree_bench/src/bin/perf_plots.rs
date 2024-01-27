@@ -32,6 +32,7 @@ struct Benchmark<'a> {
 
 fn main() -> Result<(), Box<dyn Error>> {
     let mut f_construct = File::create("construct_time.csv")?;
+    let mut f_mem = File::create("mem.csv")?;
 
     let args: Vec<String> = args().collect();
 
@@ -132,6 +133,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             &mut benchmarks,
             rsq_range,
             &mut f_construct,
+            &mut f_mem,
         )?;
     }
 
@@ -143,6 +145,7 @@ fn do_row(
     benchmarks: &mut [Benchmark],
     rsq_range: (f32, f32),
     f_construct: &mut File,
+    f_mem: &mut File,
 ) -> Result<(), Box<dyn Error>> {
     let (kdt, kdt_time) = stopwatch(|| kiddo::ImmutableKdTree::new_from_slice(&points));
 
@@ -158,6 +161,14 @@ fn do_row(
         kdt_time.as_secs_f64(),
         pkdt_time.as_secs_f64(),
         afftree_time.as_secs_f64(),
+    )?;
+
+    writeln!(
+        f_mem,
+        "{},{},{}",
+        points.len(),
+        pkdt.memory_used(),
+        afftree.memory_used()
     )?;
 
     for Benchmark {

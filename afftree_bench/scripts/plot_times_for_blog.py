@@ -80,7 +80,31 @@ def plot_query_times(fname: str, title: str):
     plt.show()
 
 
+def plot_mem(fname: str):
+    n_points = []
+    forward_mem = []
+    afftree_mem = []
+
+    with open(fname) as f:
+        reader = csv.reader(f, delimiter=",")
+        next(reader, None)
+        for row in reader:
+            n_points.append(int(row[0]))
+            forward_mem.append(int(row[1]))
+            afftree_mem.append(int(row[2]))
+
+    plt.plot(n_points, forward_mem, label="Forward tree")
+    plt.plot(n_points, afftree_mem, label="Afftree")
+    plt.semilogy()
+    plt.legend()
+    plt.xlabel("Number of points in cloud")
+    plt.ylabel("Memory used (bytes)")
+    plt.title("Memory consumption")
+    plt.show()
+
+
 plot_build_times(sys.argv[1])
 plot_query_times(sys.argv[2], "Scaling of CC on mixed queries")
 plot_query_times(sys.argv[3], "Scaling of CC on all-colliding queries")
 plot_query_times(sys.argv[4], "Scaling of CC on non-colliding queries")
+plot_mem(sys.argv[5])

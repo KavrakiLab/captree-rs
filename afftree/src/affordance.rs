@@ -19,7 +19,7 @@ use crate::{
     SquaredEuclidean,
 };
 
-const MAX_SIMD_SIZE_BYTES: usize = 512 / 8;
+const MAX_SIMD_SIZE_BYTES: usize = 256 / 8;
 const MAX_LANE_COUNT: usize = MAX_SIMD_SIZE_BYTES / size_of::<f32>();
 
 #[repr(C)]
@@ -269,8 +269,10 @@ where
     /// Get the total memory used (stack + heap) by this structure, measured in bytes.
     pub fn memory_used(&self) -> usize {
         size_of::<Self>()
-            + self.affordances.len() * size_of::<[A; K]>()
+            + K * self.affordances[0].len() * size_of::<A>()
             + self.aff_starts.len() * size_of::<I>()
+            + self.tests.len() * size_of::<I>()
+            + self.aabbs.len() * size_of::<Volume<A, K>>()
     }
 
     #[must_use]

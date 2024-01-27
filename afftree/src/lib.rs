@@ -364,8 +364,7 @@ impl<const K: usize> PkdTree<K> {
     #[must_use]
     /// Return the total memory used (stack + heap) by this structure.
     pub fn memory_used(&self) -> usize {
-        size_of::<AffordanceTree<K>>()
-            + (self.points.len() * K + self.tests.len()) * size_of::<f32>()
+        size_of::<Self>() + (self.points.len() * K + self.tests.len()) * size_of::<f32>()
     }
 }
 

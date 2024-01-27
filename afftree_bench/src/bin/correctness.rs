@@ -70,7 +70,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let exact_dist = dist(kdt.get_point(kdt.query1_exact(*center)), *center);
         assert_eq!(exact_dist, exact_kiddo_dist);
 
-        let simd_center: [Simd<f32, 16>; 3] = [
+        let simd_center: [Simd<f32, 8>; 3] = [
             Simd::splat(center[0]),
             Simd::splat(center[1]),
             Simd::splat(center[2]),
