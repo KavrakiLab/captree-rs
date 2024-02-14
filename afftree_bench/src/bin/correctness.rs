@@ -64,7 +64,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     for (i, (center, r)) in trace.iter().enumerate() {
         println!("iter {i}: {:?}", (center, r));
         let exact_kiddo_dist = kiddo_kdt
-            .nearest_one::<SquaredEuclidean>(&center)
+            .nearest_one::<SquaredEuclidean>(center)
             .distance
             .sqrt();
         let exact_dist = dist(kdt.get_point(kdt.query1_exact(*center)), *center);
@@ -76,10 +76,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Simd::splat(center[2]),
         ];
         if exact_dist <= R {
-            assert!(aff_tree.collides(&center, R_SQ));
+            assert!(aff_tree.collides(center, R_SQ));
             assert!(aff_tree.collides_simd(&simd_center, Simd::splat(R)))
         } else {
-            assert!(!aff_tree.collides(&center, R_SQ));
+            assert!(!aff_tree.collides(center, R_SQ));
             assert!(!aff_tree.collides_simd(&simd_center, Simd::splat(R)))
         }
     }

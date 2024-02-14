@@ -5,6 +5,7 @@ use std::{
     marker::PhantomData,
     mem::{align_of, size_of},
     ops::{AddAssign, Mul, Sub},
+    ptr::addr_of,
     simd::{
         cmp::{SimdPartialEq, SimdPartialOrd},
         ptr::SimdConstPtr,
@@ -158,7 +159,7 @@ where
                         let mut j = 1;
                         for pt in &frame.possible_collisions {
                             arr.0[j] = pt[k];
-                            j = j + 1;
+                            j += 1;
                             if j == MAX_LANE_COUNT {
                                 affordances[k].push(arr);
                                 j = 0;
@@ -221,7 +222,7 @@ where
             tests,
             rsq_range: r_range,
             aff_starts: aff_starts.into_boxed_slice(),
-            affordances: affordances.map(|x| x.into_boxed_slice()),
+            affordances: affordances.map(Vec::into_boxed_slice),
             aabbs: aabbs.into_boxed_slice(),
             _phantom: PhantomData,
         })
@@ -243,7 +244,7 @@ where
 
         let i = forward_pass(&self.tests, center);
         let aabb = unsafe { self.aabbs.get_unchecked(i) };
-        if D::closest_distance_to_volume(&aabb, center) > radius {
+        if D::closest_distance_to_volume(aabb, center) > radius {
             return false;
         }
 
@@ -257,6 +258,7 @@ where
         for i in range {
             for j in 0..MAX_LANE_COUNT {
                 let mut aff_pt = [A::INFINITY; K];
+                #[allow(clippy::needless_range_loop)]
                 for k in 0..K {
                     aff_pt[k] = self.affordances[k][i].0[j];
                 }
@@ -297,6 +299,11 @@ where
     #[must_use]
     /// Determine whether any sphere in the list of provided spheres intersects a point in this
     /// tree.
+    ///
+    /// # Panics
+    ///
+    /// This function may panic if `L` is greater than the alignment of the underlying allocations
+    /// backing the structure.
     pub fn collides_simd<const L: usize>(
         &self,
         centers: &[Simd<A, L>; K],
@@ -362,11 +369,11 @@ where
                 for seg_id in range {
                     for i in (0..MAX_LANE_COUNT).step_by(L) {
                         let mut dists_sq = Simd::splat(SquaredEuclidean::ZERO);
+                        #[allow(clippy::needless_range_loop)]
                         for k in 0..K {
                             let vals = unsafe {
                                 // SAFETY: We checked for alignment at the start of the function.
-                                *(&self.affordances[k][seg_id].0[i] as *const A)
-                                    .cast::<Simd<A, L>>()
+                                *addr_of!(self.affordances[k][seg_id].0[i]).cast::<Simd<A, L>>()
                             };
                             let diff = vals - centers[k];
                             dists_sq += diff * diff;

@@ -242,6 +242,7 @@ impl<const K: usize> PkdTree<K> {
         }
     }
 
+    #[must_use]
     pub fn approx_nearest(&self, needle: [f32; K]) -> [f32; K] {
         self.get_point(forward_pass(&self.tests, &needle))
     }
@@ -384,6 +385,7 @@ fn forward_pass<A: Axis, const K: usize>(tests: &[A], point: &[A; K]) -> usize {
 }
 
 #[inline]
+#[allow(clippy::cast_possible_wrap)]
 fn forward_pass_simd<A, const K: usize, const L: usize>(
     tests: &[A],
     centers: &[Simd<A, L>; K],

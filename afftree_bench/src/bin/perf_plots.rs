@@ -147,13 +147,12 @@ fn do_row(
     f_construct: &mut File,
     f_mem: &mut File,
 ) -> Result<(), Box<dyn Error>> {
-    let (kdt, kdt_time) = stopwatch(|| kiddo::ImmutableKdTree::new_from_slice(&points));
+    let (kdt, kdt_time) = stopwatch(|| kiddo::ImmutableKdTree::new_from_slice(points));
 
-    let (pkdt, pkdt_time) = stopwatch(|| PkdTree::new(&points));
+    let (pkdt, pkdt_time) = stopwatch(|| PkdTree::new(points));
 
-    let (afftree, afftree_time) = stopwatch(|| {
-        AffordanceTree::<3>::new(&points, rsq_range, &mut rand::thread_rng()).unwrap()
-    });
+    let (afftree, afftree_time) =
+        stopwatch(|| AffordanceTree::<3>::new(points, rsq_range, &mut rand::thread_rng()).unwrap());
     writeln!(
         f_construct,
         "{},{},{},{}",
