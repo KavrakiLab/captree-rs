@@ -24,7 +24,6 @@ mod forest;
 pub use affordance::AffordanceTree;
 use affordance::Volume;
 pub use forest::PkdForest;
-use rand::{thread_rng, Rng};
 
 pub trait Axis: PartialOrd + Copy + Sub<Output = Self> + Add<Output = Self> {
     const INFINITY: Self;
@@ -217,7 +216,7 @@ impl<const K: usize> PkdTree<K> {
         /// Runs in O(n log n)
         fn build_tree<const K: usize>(points: &mut [[f32; K]], tests: &mut [f32], k: u8, i: usize) {
             if points.len() > 1 {
-                tests[i] = median_partition(points, k as usize, &mut thread_rng());
+                tests[i] = median_partition(points, k as usize);
                 let next_k = (k + 1) % K as u8;
                 let (lhs, rhs) = points.split_at_mut(points.len() / 2);
                 build_tree(lhs, tests, next_k, 2 * i + 1);
@@ -414,53 +413,15 @@ where
 #[inline]
 /// Calculate the "true" median (halfway between two midpoints) and partition `points` about said
 /// median along axis `d`.
-fn median_partition<A: Axis, const K: usize>(
-    points: &mut [[A; K]],
-    k: usize,
-    rng: &mut impl Rng,
-) -> A {
-    let target = points.len() / 2;
-    let mut left = 0;
-    let mut right = points.len();
-
-    while right - left > 1 {
-        // Hoare partition
-        let pivot_val = points[rng.gen_range(left..right)][k];
-        let mut i = left.overflowing_sub(1).0;
-        let mut j = right;
-        let pivot_idx = unsafe {
-            loop {
-                i = i.overflowing_add(1).0;
-                while *points.get_unchecked(i).get_unchecked(k) < pivot_val {
-                    i += 1;
-                }
-                j -= 1;
-                while *points.get_unchecked(j).get_unchecked(k) > pivot_val {
-                    j -= 1;
-                }
-
-                if i < j {
-                    points.swap(i, j);
-                } else {
-                    break j + 1;
-                }
-            }
-        };
-
-        if target < pivot_idx {
-            right = pivot_idx;
-        } else {
-            left = pivot_idx;
-        }
-    }
-
-    let median_hi = points[left][k];
-    let median_lo = points[..points.len() / 2]
-        .iter()
-        .map(|x| x[k])
+fn median_partition<A: Axis, const K: usize>(points: &mut [[A; K]], k: usize) -> A {
+    let (lh, med_hi, _) =
+        points.select_nth_unstable_by(points.len() / 2, |a, b| a[k].partial_cmp(&b[k]).unwrap());
+    let med_lo = lh
+        .iter_mut()
+        .map(|p| p[k])
         .max_by(|a, b| a.partial_cmp(b).unwrap())
         .unwrap();
-    median_lo.in_between(median_hi)
+    A::in_between(med_lo, med_hi[k])
 }
 
 fn distsq<const K: usize>(a: [f32; K], b: [f32; K]) -> f32 {
@@ -473,8 +434,6 @@ fn distsq<const K: usize>(a: [f32; K], b: [f32; K]) -> f32 {
 
 #[cfg(test)]
 mod tests {
-    use rand::thread_rng;
-
     use super::*;
 
     #[test]
@@ -560,7 +519,7 @@ mod tests {
         let points = vec![[1.0], [2.0], [1.5], [2.1], [-0.5]];
 
         let mut points1 = points.clone();
-        let median = median_partition(&mut points1, 0, &mut thread_rng());
+        let median = median_partition(&mut points1, 0);
         assert_eq!(median, 1.25);
         for p0 in &points1[..points1.len() / 2] {
             assert!(p0[0] <= median);

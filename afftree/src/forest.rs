@@ -5,8 +5,6 @@ use std::{
     simd::{cmp::SimdPartialOrd, ptr::SimdConstPtr, LaneCount, Mask, Simd, SupportedLaneCount},
 };
 
-use rand::Rng;
-
 use crate::{distsq, forward_pass, median_partition};
 
 #[derive(Clone, Debug)]
@@ -23,12 +21,14 @@ pub struct PkdForest<const K: usize, const T: usize> {
 }
 
 impl<const K: usize, const T: usize> PkdForest<K, T> {
-    pub fn new(points: &[[f32; K]], rng: &mut impl Rng) -> Self {
+    #[allow(clippy::cast_possible_truncation)]
+    #[must_use]
+    pub fn new(points: &[[f32; K]]) -> Self {
         unsafe {
             let mut buf: [MaybeUninit<RandomizedTree<K>>; T] = MaybeUninit::uninit().assume_init();
 
-            for tree in &mut buf {
-                tree.write(RandomizedTree::new(points, rng));
+            for (i, tree) in buf.iter_mut().enumerate() {
+                tree.write(RandomizedTree::new(points, i as u32));
             }
 
             PkdForest {
@@ -94,7 +94,7 @@ impl<const K: usize, const T: usize> PkdForest<K, T> {
 }
 
 impl<const K: usize> RandomizedTree<K> {
-    pub fn new(points: &[[f32; K]], rng: &mut impl Rng) -> Self {
+    pub fn new(points: &[[f32; K]], seed: u32) -> Self {
         /// Recursive helper function to sort the points for the KD tree and generate the tests.
         fn recur_sort_points<const K: usize>(
             points: &mut [[f32; K]],
@@ -102,15 +102,14 @@ impl<const K: usize> RandomizedTree<K> {
             test_dims: &mut [u8],
             i: usize,
             state: u32,
-            rng: &mut impl Rng,
         ) {
             if points.len() > 1 {
                 let d = state as usize % K;
-                tests[i] = median_partition(points, d, rng);
+                tests[i] = median_partition(points, d);
                 test_dims[i] = u8::try_from(d).unwrap();
                 let (lhs, rhs) = points.split_at_mut(points.len() / 2);
-                recur_sort_points(lhs, tests, test_dims, 2 * i + 1, xorshift(state), rng);
-                recur_sort_points(rhs, tests, test_dims, 2 * i + 2, xorshift(state), rng);
+                recur_sort_points(lhs, tests, test_dims, 2 * i + 1, xorshift(state));
+                recur_sort_points(rhs, tests, test_dims, 2 * i + 2, xorshift(state));
             }
         }
 
@@ -124,14 +123,12 @@ impl<const K: usize> RandomizedTree<K> {
         let mut new_points = vec![[f32::INFINITY; K]; n2];
         new_points[..points.len()].copy_from_slice(points);
         let mut test_dims = vec![0; n2 - 1].into_boxed_slice();
-        let seed = rng.gen();
         recur_sort_points(
             new_points.as_mut(),
             tests.as_mut(),
             test_dims.as_mut(),
             0,
             seed,
-            rng,
         );
 
         Self {
@@ -190,15 +187,13 @@ fn xorshift(mut x: u32) -> u32 {
 
 #[cfg(test)]
 mod tests {
-    use rand::thread_rng;
-
     use super::*;
 
     #[test]
     fn build_a_forest() {
         let points = [[0.0, 0.0], [0.2, 1.0], [-1.0, 0.4]];
 
-        let forest = PkdForest::<2, 2>::new(&points, &mut thread_rng());
+        let forest = PkdForest::<2, 2>::new(&points);
         println!("{forest:#?}");
     }
 
@@ -207,7 +202,7 @@ mod tests {
     fn find_the_closest() {
         let points = [[0.0, 0.0], [0.2, 1.0], [-1.0, 0.4]];
 
-        let forest = PkdForest::<2, 2>::new(&points, &mut thread_rng());
+        let forest = PkdForest::<2, 2>::new(&points);
         // assert_eq!(forest.query1([0.01, 0.02]), ([]))
         let (nearest, ndsq) = forest.approx_nearest([0.01, 0.02]);
         assert_eq!(nearest, [0.0, 0.0]);

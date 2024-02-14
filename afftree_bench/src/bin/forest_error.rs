@@ -23,7 +23,7 @@ fn main() {
 }
 
 fn err_forest<const T: usize>(points: &[[f32; 3]], rng: &mut impl Rng) {
-    let forest = PkdForest::<3, T>::new(points, rng);
+    let forest = PkdForest::<3, T>::new(points);
 
     let mut kiddo_kdt = kiddo::KdTree::new();
     for pt in points {
