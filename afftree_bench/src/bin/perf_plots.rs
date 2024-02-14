@@ -91,7 +91,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!("number of tests: {}", all_trace.len());
     println!("radius-squared range: {rsq_range:?}");
 
-    let afftree = AffordanceTree::<3>::new(&points, rsq_range, &mut rand::thread_rng()).unwrap();
+    let afftree = AffordanceTree::<3>::new(&points, rsq_range).unwrap();
 
     let collide_trace: Box<Trace> = all_trace
         .iter()
@@ -152,7 +152,7 @@ fn do_row(
     let (pkdt, pkdt_time) = stopwatch(|| PkdTree::new(points));
 
     let (afftree, afftree_time) =
-        stopwatch(|| AffordanceTree::<3>::new(points, rsq_range, &mut rand::thread_rng()).unwrap());
+        stopwatch(|| AffordanceTree::<3>::new(points, rsq_range).unwrap());
     writeln!(
         f_construct,
         "{},{},{},{}",

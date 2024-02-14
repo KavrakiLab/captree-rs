@@ -1,6 +1,9 @@
 //! Affordance trees, a novel kind of collision tree with excellent performance, branchless queries,
 //! and SIMD batch parallelism.
 
+use crate::{
+    forward_pass, forward_pass_simd, Axis, AxisSimd, Distance, Index, IndexSimd, SquaredEuclidean,
+};
 use std::{
     marker::PhantomData,
     mem::{align_of, size_of},
@@ -11,13 +14,6 @@ use std::{
         ptr::SimdConstPtr,
         LaneCount, Mask, Simd, SupportedLaneCount,
     },
-};
-
-use rand::Rng;
-
-use crate::{
-    forward_pass, forward_pass_simd, median_partition, Axis, AxisSimd, Distance, Index, IndexSimd,
-    SquaredEuclidean,
 };
 
 const MAX_SIMD_SIZE_BYTES: usize = 256 / 8;
@@ -101,7 +97,12 @@ where
     R: PartialOrd + Copy,
 {
     #[must_use]
-    #[allow(clippy::cast_possible_truncation, clippy::float_cmp)]
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::float_cmp,
+        clippy::too_many_lines,
+        clippy::missing_panics_doc
+    )]
     /// Construct a new affordance tree containing all the points in `points`.
     /// `r_range` is a `(minimum, maximum)` pair containing the lower and upper bound on the
     /// radius of the balls which will be queried against the tree.
@@ -113,7 +114,7 @@ where
     ///
     /// This function will return `None` if there are too many points to be indexed by `I`, or if
     /// `K` is greater than `255`.
-    pub fn new(points: &[[A; K]], r_range: (R, R), rng: &mut impl Rng) -> Option<Self> {
+    pub fn new(points: &[[A; K]], r_range: (R, R)) -> Option<Self> {
         if K >= u8::MAX as usize {
             return None;
         }
@@ -177,8 +178,19 @@ where
                 let Some(f) = stack.pop() else { break };
                 frame = f;
             } else {
+                let k = frame.k as usize;
                 // split the volume in half
-                let test = median_partition(frame.points, frame.k as usize, rng);
+                let (lh, med_hi, _) = frame
+                    .points
+                    .select_nth_unstable_by(frame.points.len() / 2, |a, b| {
+                        a[k].partial_cmp(&b[k]).unwrap()
+                    });
+                let med_lo = lh
+                    .iter_mut()
+                    .map(|p| p[k])
+                    .max_by(|a, b| a.partial_cmp(b).unwrap())
+                    .unwrap();
+                let test = A::in_between(med_lo, med_hi[k]);
                 tests[frame.i] = test;
                 let (lhs, rhs) = frame.points.split_at_mut(frame.points.len() / 2);
                 let (low_vol, hi_vol) = frame.volume.split(test, frame.k as usize);
@@ -437,15 +449,14 @@ mod tests {
     #[test]
     fn build_simple() {
         let points = [[0.0, 0.1], [0.4, -0.2], [-0.2, -0.1]];
-        let t = AffordanceTree::<2>::new(&points, (0.0, 0.04), &mut thread_rng());
+        let t = AffordanceTree::<2>::new(&points, (0.0, 0.04));
         println!("{t:?}");
     }
 
     #[test]
     fn exact_query_single() {
         let points = [[0.0, 0.1], [0.4, -0.2], [-0.2, -0.1]];
-        let t =
-            AffordanceTree::<2>::new(&points, (0.0, 0.2f32.powi(2)), &mut thread_rng()).unwrap();
+        let t = AffordanceTree::<2>::new(&points, (0.0, 0.2f32.powi(2))).unwrap();
 
         println!("{t:?}");
 
@@ -456,7 +467,7 @@ mod tests {
     #[test]
     fn another_one() {
         let points = [[0.0, 0.1], [0.4, -0.2], [-0.2, -0.1]];
-        let t = AffordanceTree::<2>::new(&points, (0.0, 0.04), &mut thread_rng()).unwrap();
+        let t = AffordanceTree::<2>::new(&points, (0.0, 0.04)).unwrap();
 
         println!("{t:?}");
 
@@ -473,7 +484,7 @@ mod tests {
             [0.1, -1.1, 0.5],
         ];
 
-        let t = AffordanceTree::<3>::new(&points, (0.0, 0.04), &mut thread_rng()).unwrap();
+        let t = AffordanceTree::<3>::new(&points, (0.0, 0.04)).unwrap();
 
         println!("{t:?}");
         assert!(t.collides(&[0.0, 0.1, 0.0], 0.011));
@@ -485,7 +496,7 @@ mod tests {
         const R_SQ: f32 = 0.0004;
         let points = [[0.0, 0.1], [0.4, -0.2], [-0.2, -0.1]];
         let mut rng = thread_rng();
-        let t = AffordanceTree::<2>::new(&points, (0.0, 0.0008), &mut rng).unwrap();
+        let t = AffordanceTree::<2>::new(&points, (0.0, 0.0008)).unwrap();
 
         for _ in 0..10_000 {
             let p = [rng.gen_range(-1.0..1.0), rng.gen_range(-1.0..1.0)];
@@ -518,7 +529,7 @@ mod tests {
             [7.0, 7.0],
         ];
         let rsq_range = (R_SQ - f32::EPSILON, R_SQ + f32::EPSILON);
-        let t = AffordanceTree::<2>::new(&points, rsq_range, &mut thread_rng()).unwrap();
+        let t = AffordanceTree::<2>::new(&points, rsq_range).unwrap();
         println!("{t:?}");
 
         assert!(t.collides(&[-0.001, -0.2], 1.0));

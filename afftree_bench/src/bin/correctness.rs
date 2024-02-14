@@ -5,8 +5,7 @@ use std::simd::Simd;
 use afftree::AffordanceTree;
 use afftree_bench::{dist, parse_pointcloud_csv, parse_trace_csv, trace_rsq_range};
 use kiddo::SquaredEuclidean;
-use rand::{seq::SliceRandom, Rng, SeedableRng};
-use rand_chacha::ChaCha20Rng;
+use rand::{seq::SliceRandom, Rng};
 
 const N: usize = 1 << 12;
 const R: f32 = 0.02;
@@ -51,15 +50,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let rsq_range = trace_rsq_range(&trace);
 
-    let mut rng = ChaCha20Rng::seed_from_u64(27071);
-
     let kdt = afftree::PkdTree::new(&points);
     let mut kiddo_kdt = kiddo::KdTree::new();
     for pt in points.iter() {
         kiddo_kdt.add(pt, 0);
     }
 
-    let aff_tree = AffordanceTree::<3>::new(&points, rsq_range, &mut rng).unwrap();
+    let aff_tree = AffordanceTree::<3>::new(&points, rsq_range).unwrap();
 
     for (i, (center, r)) in trace.iter().enumerate() {
         println!("iter {i}: {:?}", (center, r));
