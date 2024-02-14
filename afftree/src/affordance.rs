@@ -149,6 +149,10 @@ where
                 };
                 if cell_center[0].is_finite() {
                     for k in 0..K {
+                        affordances[k].reserve(
+                            affordances.len()
+                                + (frame.possible_collisions.len() + 1) / MAX_LANE_COUNT,
+                        );
                         let mut arr = CacheAlign([A::INFINITY; MAX_LANE_COUNT]);
                         arr.0[0] = cell_center[k];
                         let mut j = 1;
