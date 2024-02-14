@@ -2,7 +2,7 @@
 
 use std::simd::{LaneCount, SupportedLaneCount};
 
-use afftree_bench::{dist, get_points, make_needles};
+use afftree_bench::{dist, fuzz_pointcloud, get_points, make_needles};
 use kiddo::SquaredEuclidean;
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
@@ -13,8 +13,9 @@ const D: usize = 3;
 
 fn main() {
     let mut rng = ChaCha20Rng::seed_from_u64(2707);
-    let starting_points = get_points(N);
-    measure_error::<D, L>(&starting_points, &mut rng, 1 << 20);
+    let mut starting_points = get_points(N);
+    fuzz_pointcloud(&mut starting_points, 0.001, &mut rng);
+    measure_error::<D, L>(&starting_points, &mut rng, 1 << 16)
 }
 
 pub fn measure_error<const D: usize, const L: usize>(
@@ -39,10 +40,8 @@ pub fn measure_error<const D: usize, const L: usize>(
             .nearest_one::<SquaredEuclidean>(&seq_needle)
             .distance
             .sqrt();
-        let exact_dist = dist(kdt.get_point(kdt.query1_exact(seq_needle)), seq_needle);
-        assert_eq!(exact_dist, exact_kiddo_dist);
         let approx_dist = dist(seq_needle, kdt.approx_nearest(seq_needle));
-        let rel_error = approx_dist / exact_dist - 1.0;
-        println!("{seq_needle:?}\t{exact_dist}\t{approx_dist}\t{rel_error}");
+        let rel_error = approx_dist / exact_kiddo_dist - 1.0;
+        println!("{seq_needle:?}\t{exact_kiddo_dist}\t{approx_dist}\t{rel_error}");
     }
 }

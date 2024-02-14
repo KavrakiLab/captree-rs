@@ -1,5 +1,4 @@
 #!/usr/bin/python
-
 """
 USAGE: 
 ```
@@ -31,55 +30,16 @@ with open(csv_fname) as f:
         rel_errs[n_trees].append(rel_err)
         exact_dists[n_trees].append(exact_dist)
 
-
 # CDFs
 
 for n_trees, abs_err in abs_errs.items():
-    plt.hist(
-        abs_err,
-        bins=400,
-        density=True,
-        cumulative=True,
-        histtype="step",
-        alpha=0.8,
-        label=f"T={n_trees}",
-    )
+    h, edges = np.histogram(abs_err, bins=400)
+    cy = np.cumsum(h / np.sum(h))
 
-plt.xlabel("Absolute distance error")
+    plt.plot(edges[:-1], cy, label=f"T={n_trees}")
+    # plt.fill_between(edges[:-1], cy, step="pre", alpha=0.4)
+plt.xlabel("Absolute distance error (m)")
 plt.ylabel("Frequency")
-plt.title(f"CDF of absolute error distribution for {csv_fname}")
-plt.legend()
-plt.show()
-
-
-for n_trees, rel_err in rel_errs.items():
-    plt.hist(
-        rel_err,
-        bins=400,
-        density=True,
-        cumulative=True,
-        histtype="step",
-        alpha=0.8,
-        label=f"T={n_trees}",
-    )
-
-plt.xlabel("Relative distance error")
-plt.ylabel("Frequency")
-plt.title(f"CDF of relative error distribution for {csv_fname}")
-plt.legend()
-plt.show()
-
-# Scatters
-
-for n_trees, abs_err in abs_errs.items():
-    plt.scatter(
-        exact_dists[n_trees],
-        np.sum(np.asarray([exact_dists[n_trees], abs_err]), axis=0),
-        alpha=0.8,
-        label=f"T={n_trees}",
-    )
-plt.xlabel("Exact distance")
-plt.ylabel("Estimated distance")
-plt.title(f"Distance estimation results")
+plt.title(f"CDF of forest absolute error distribution")
 plt.legend()
 plt.show()
