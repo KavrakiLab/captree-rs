@@ -1,5 +1,5 @@
 use afftree::PkdForest;
-use afftree_bench::{get_points, make_needles};
+use afftree_bench::{fuzz_pointcloud, get_points, make_needles};
 use kiddo::SquaredEuclidean;
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
@@ -8,7 +8,8 @@ const N: usize = 1 << 12;
 
 fn main() {
     let mut rng = ChaCha20Rng::seed_from_u64(2707);
-    let starting_points = get_points(N);
+    let mut starting_points = get_points(N);
+    fuzz_pointcloud(&mut starting_points, 0.001, &mut rng);
 
     err_forest::<1>(&starting_points, &mut rng);
     err_forest::<2>(&starting_points, &mut rng);
