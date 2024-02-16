@@ -2,13 +2,13 @@
 //! and SIMD batch parallelism.
 
 use crate::{
-    forward_pass, forward_pass_simd, Axis, AxisSimd, Distance, Index, IndexSimd, SquaredEuclidean,
+    forward_pass, forward_pass_simd, median_partition, Axis, AxisSimd, Distance, Index, IndexSimd,
+    SquaredEuclidean,
 };
 use std::{
     marker::PhantomData,
     mem::{align_of, size_of},
     ops::{AddAssign, Mul, Sub},
-    ptr::addr_of,
     simd::{
         cmp::{SimdPartialEq, SimdPartialOrd},
         ptr::SimdConstPtr,
@@ -51,42 +51,22 @@ pub struct AffordanceTree<const K: usize, A = f32, I = usize, D = SquaredEuclide
     /// The range of radii which are legal for queries on this tree.
     /// The first element is the minimum and the second element is the maximum.
     rsq_range: (R, R),
+    aabbs: Box<[Aabb<A, K>]>,
     /// Indexes for the starts of the affordance buffer subsequence of `points` corresponding to
     /// each leaf cell in the tree.
     /// This buffer is padded with one extra `usize` at the end with the maximum length of `points`
     /// for the sake of branchless computation.
-    aff_starts: Box<[I]>,
-    affordances: [Box<[CacheAlign<A>]>; K],
-    aabbs: Box<[Volume<A, K>]>,
+    starts: Box<[I]>,
+    afforded: [Box<[A]>; K],
     _phantom: PhantomData<D>,
 }
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq)]
 /// A prismatic bounding volume.
-pub struct Volume<A, const K: usize> {
-    pub lower: [A; K],
-    pub upper: [A; K],
-}
-
-#[derive(Debug)]
-/// Cursed evil structure used for unrolling a recursive function into an iterative one.
-/// This is the contents of a stack frame as used during construction of the tree.
-///
-/// # Generic parameters
-///
-/// - `K`: The dimension of the space.
-struct BuildStackFrame<'a, A, const K: usize> {
-    /// A slice of the set of points belonging to the subtree currently being constructed.
-    points: &'a mut [[A; K]],
-    /// The current dimension to split on.
-    k: u8,
-    /// The current index in the test buffer.
-    i: usize,
-    /// The points which might collide with the contents of the current cell.
-    possible_collisions: Vec<[A; K]>,
-    /// The prism occupied by this subtree's cell.
-    volume: Volume<A, K>,
+pub struct Aabb<A, const K: usize> {
+    pub lo: [A; K],
+    pub hi: [A; K],
 }
 
 impl<A, I, D, R, const K: usize> AffordanceTree<K, A, I, D, R>
@@ -126,118 +106,119 @@ where
         // hack: just pad with infinity to make it a power of 2
         let mut points2 = vec![[A::INFINITY; K]; n2].into_boxed_slice();
         points2[..points.len()].copy_from_slice(points);
-        let mut affordances = [0; K].map(|_| Vec::with_capacity(n2));
-        let mut aff_starts = Vec::with_capacity(n2 + 1);
+        let mut afforded = [0; K].map(|_| Vec::with_capacity(n2));
+        let mut starts = vec![I::ZERO; n2 + 1].into_boxed_slice();
 
-        let mut stack = Vec::with_capacity(n2.ilog2() as usize);
+        let mut aabbs = vec![
+            Aabb {
+                lo: [A::ZERO; K],
+                hi: [A::ZERO; K],
+            };
+            n2
+        ]
+        .into_boxed_slice();
 
-        // current frame - used as a CPS transformation to prevent excessive push/pop to stack
-        let mut frame = BuildStackFrame {
-            points: &mut points2,
-            k: 0,
-            i: 0,
-            possible_collisions: Vec::new(),
-            volume: Volume::ALL,
-        };
-
-        aff_starts.push(0.try_into().ok()?);
-        let mut aabbs = Vec::with_capacity(n2);
-        // Iteratively-transformed construction procedure
-        loop {
-            if let [cell_center] = *frame.points {
-                let mut aabb = Volume {
-                    lower: cell_center,
-                    upper: cell_center,
-                };
-                if cell_center[0].is_finite() {
-                    for k in 0..K {
-                        affordances[k].reserve(
-                            affordances.len()
-                                + (frame.possible_collisions.len() + 1) / MAX_LANE_COUNT,
-                        );
-                        let mut arr = CacheAlign([A::INFINITY; MAX_LANE_COUNT]);
-                        arr.0[0] = cell_center[k];
-                        let mut j = 1;
-                        for pt in &frame.possible_collisions {
-                            arr.0[j] = pt[k];
-                            j += 1;
-                            if j == MAX_LANE_COUNT {
-                                affordances[k].push(arr);
-                                j = 0;
-                            }
-                        }
-                        affordances[k].push(arr);
-                    }
-                    for pt in frame.possible_collisions {
-                        aabb.insert(&pt);
-                    }
-                }
-                aff_starts.push(affordances[0].len().try_into().ok()?);
-                aabbs.push(aabb);
-
-                let Some(f) = stack.pop() else { break };
-                frame = f;
-            } else {
-                let k = frame.k as usize;
-                // split the volume in half
-                let (lh, med_hi, _) = frame
-                    .points
-                    .select_nth_unstable_by(frame.points.len() / 2, |a, b| {
-                        a[k].partial_cmp(&b[k]).unwrap()
-                    });
-                let med_lo = lh
-                    .iter_mut()
-                    .map(|p| p[k])
-                    .max_by(|a, b| a.partial_cmp(b).unwrap())
-                    .unwrap();
-                let test = A::in_between(med_lo, med_hi[k]);
-                tests[frame.i] = test;
-                let (lhs, rhs) = frame.points.split_at_mut(frame.points.len() / 2);
-                let (low_vol, hi_vol) = frame.volume.split(test, frame.k as usize);
-                let mut lo_afford = frame.possible_collisions;
-                let mut hi_afford = Vec::<[A; K]>::with_capacity(lo_afford.len());
-
-                // retain only points which might be in the affordance buffer for the split-out
-                // cells
-                lo_afford.retain(|pt| {
-                    if hi_vol.affords::<D>(pt, &r_range) {
-                        hi_afford.push(*pt);
-                    }
-                    low_vol.affords::<D>(pt, &r_range)
-                });
-                lo_afford.extend(rhs.iter().filter(|pt| low_vol.affords::<D>(pt, &r_range)));
-                hi_afford.extend(lhs.iter().filter(|pt| hi_vol.affords::<D>(pt, &r_range)));
-
-                let next_k = (frame.k + 1) % K as u8;
-
-                // because the stack is FIFO, we must put the left recursion last
-                stack.push(BuildStackFrame {
-                    points: rhs,
-                    k: next_k,
-                    i: 2 * frame.i + 2,
-                    possible_collisions: hi_afford,
-                    volume: hi_vol,
-                });
-
-                // Save a push/pop operation by directly updating the current frame
-                frame = BuildStackFrame {
-                    points: lhs,
-                    k: next_k,
-                    i: 2 * frame.i + 1,
-                    possible_collisions: lo_afford,
-                    volume: low_vol,
-                };
-            }
-        }
+        Self::new_help(
+            &mut points2,
+            &mut tests,
+            &mut aabbs,
+            &mut afforded,
+            &mut starts,
+            0,
+            0,
+            r_range,
+            Vec::new(),
+            Aabb::ALL,
+        )
+        .ok()?;
 
         Some(AffordanceTree {
             tests,
             rsq_range: r_range,
-            aff_starts: aff_starts.into_boxed_slice(),
-            affordances: affordances.map(Vec::into_boxed_slice),
-            aabbs: aabbs.into_boxed_slice(),
+            starts,
+            afforded: afforded.map(Vec::into_boxed_slice),
+            aabbs,
             _phantom: PhantomData,
         })
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn new_help(
+        points: &mut [[A; K]],
+        tests: &mut [A],
+        aabbs: &mut [Aabb<A, K>],
+        afforded: &mut [Vec<A>; K],
+        starts: &mut [I],
+        k: usize,
+        i: usize,
+        r_range: (R, R),
+        in_range: Vec<[A; K]>,
+        cell: Aabb<A, K>,
+    ) -> Result<(), ()> {
+        if let [rep] = *points {
+            let z = i - tests.len();
+            let aabb = &mut aabbs[z];
+            *aabb = Aabb { lo: rep, hi: rep };
+            if rep[0].is_finite() {
+                for k in 0..K {
+                    afforded[k].push(rep[k]);
+                }
+
+                if !D::ball_contains_aabb(&cell, &rep, r_range.0) {
+                    for p in in_range {
+                        aabb.insert(&p);
+                        for k in 0..K {
+                            afforded[k].push(p[k]);
+                        }
+                    }
+                }
+            }
+
+            starts[z + 1] = afforded[0].len().try_into().map_err(|_| ())?;
+            return Ok(());
+        }
+
+        let test = median_partition(points, k);
+        tests[i] = test;
+
+        let (lhs, rhs) = points.split_at_mut(points.len() / 2);
+        let (lo_vol, hi_vol) = cell.split(test, k);
+        let mut lo_afford = in_range;
+        let mut hi_afford = lo_afford.clone();
+
+        // retain only points which might be in the affordance buffer for the split-out cells
+        lo_afford.retain(|pt| lo_vol.affords::<D>(pt, &r_range));
+        lo_afford.extend(rhs.iter().filter(|pt| lo_vol.affords::<D>(pt, &r_range)));
+        hi_afford.retain(|pt| hi_vol.affords::<D>(pt, &r_range));
+        hi_afford.extend(lhs.iter().filter(|pt| hi_vol.affords::<D>(pt, &r_range)));
+
+        let next_k = (k + 1) % K;
+        Self::new_help(
+            lhs,
+            tests,
+            aabbs,
+            afforded,
+            starts,
+            next_k,
+            2 * i + 1,
+            r_range,
+            lo_afford,
+            lo_vol,
+        )?;
+        Self::new_help(
+            rhs,
+            tests,
+            aabbs,
+            afforded,
+            starts,
+            next_k,
+            2 * i + 2,
+            r_range,
+            hi_afford,
+            hi_vol,
+        )?;
+
+        Ok(())
     }
 
     #[must_use]
@@ -262,21 +243,19 @@ where
 
         let range = unsafe {
             // SAFETY: The conversion worked the first way.
-            self.aff_starts[i].try_into().unwrap_unchecked()
-                ..self.aff_starts[i + 1].try_into().unwrap_unchecked()
+            self.starts[i].try_into().unwrap_unchecked()
+                ..self.starts[i + 1].try_into().unwrap_unchecked()
         };
 
         // check affordance buffer
         for i in range {
-            for j in 0..MAX_LANE_COUNT {
-                let mut aff_pt = [A::INFINITY; K];
-                #[allow(clippy::needless_range_loop)]
-                for k in 0..K {
-                    aff_pt[k] = self.affordances[k][i].0[j];
-                }
-                if D::distance(&aff_pt, center) <= radius {
-                    return true;
-                }
+            let mut aff_pt = [A::INFINITY; K];
+            #[allow(clippy::needless_range_loop)]
+            for (ak, sk) in aff_pt.iter_mut().zip(&self.afforded) {
+                *ak = sk[i];
+            }
+            if D::distance(&aff_pt, center) <= radius {
+                return true;
             }
         }
 
@@ -287,17 +266,17 @@ where
     /// Get the total memory used (stack + heap) by this structure, measured in bytes.
     pub fn memory_used(&self) -> usize {
         size_of::<Self>()
-            + K * self.affordances[0].len() * size_of::<A>()
-            + self.aff_starts.len() * size_of::<I>()
+            + K * self.afforded[0].len() * size_of::<A>()
+            + self.starts.len() * size_of::<I>()
             + self.tests.len() * size_of::<I>()
-            + self.aabbs.len() * size_of::<Volume<A, K>>()
+            + self.aabbs.len() * size_of::<Aabb<A, K>>()
     }
 
     #[must_use]
     #[allow(clippy::cast_precision_loss)]
     /// Get the average number of affordances per point.
     pub fn affordance_size(&self) -> f64 {
-        self.affordances.len() as f64 / (self.tests.len() + 1) as f64
+        self.afforded.len() as f64 / (self.tests.len() + 1) as f64
     }
 }
 
@@ -358,7 +337,7 @@ where
         }
 
         // retrieve start/end pointers for the affordance buffer
-        let start_ptrs = Simd::splat(self.aff_starts.as_ptr()).wrapping_offset(zs);
+        let start_ptrs = Simd::splat(self.starts.as_ptr()).wrapping_offset(zs);
         let starts = unsafe { I::to_simd_usize_unchecked(Simd::gather_ptr(start_ptrs)) }.to_array();
         let ends = unsafe {
             I::to_simd_usize_unchecked(Simd::gather_ptr(start_ptrs.wrapping_add(Simd::splat(1))))
@@ -369,7 +348,7 @@ where
             .into_iter()
             .zip(ends)
             .zip(inbounds.to_array())
-            .filter_map(|((s, e), i)| i.then_some(s..e))
+            .filter_map(|((s, e), i)| i.then_some((s..e).step_by(L)))
             .enumerate()
             .any(|(j, range)| {
                 let mut n_center = [Simd::splat(SquaredEuclidean::ZERO); K];
@@ -378,21 +357,16 @@ where
                 }
                 let rs = Simd::splat(radii[j]);
                 let rs_sq = rs * rs;
-                for seg_id in range {
-                    for i in (0..MAX_LANE_COUNT).step_by(L) {
-                        let mut dists_sq = Simd::splat(SquaredEuclidean::ZERO);
-                        #[allow(clippy::needless_range_loop)]
-                        for k in 0..K {
-                            let vals = unsafe {
-                                // SAFETY: We checked for alignment at the start of the function.
-                                *addr_of!(self.affordances[k][seg_id].0[i]).cast::<Simd<A, L>>()
-                            };
-                            let diff = vals - centers[k];
-                            dists_sq += diff * diff;
-                        }
-                        if A::any(dists_sq.simd_le(rs_sq)) {
-                            return true;
-                        }
+                for i in range {
+                    let mut dists_sq = Simd::splat(SquaredEuclidean::ZERO);
+                    #[allow(clippy::needless_range_loop)]
+                    for k in 0..K {
+                        let vals = Simd::from_slice(&self.afforded[k][i..]);
+                        let diff = vals - centers[k];
+                        dists_sq += diff * diff;
+                    }
+                    if A::any(dists_sq.simd_le(rs_sq)) {
+                        return true;
                     }
                 }
 
@@ -401,33 +375,32 @@ where
     }
 }
 
-impl<A, const K: usize> Volume<A, K>
+impl<A, const K: usize> Aabb<A, K>
 where
     A: Axis,
 {
-    pub(crate) const ALL: Self = Volume {
-        lower: [A::NEG_INFINITY; K],
-        upper: [A::INFINITY; K],
+    pub(crate) const ALL: Self = Aabb {
+        lo: [A::NEG_INFINITY; K],
+        hi: [A::INFINITY; K],
     };
 
     /// Split this volume by a test plane with value `test` along `dim`.
     fn split(mut self, test: A, dim: usize) -> (Self, Self) {
         let mut rhs = self;
-        self.upper[dim] = test;
-        rhs.lower[dim] = test;
+        self.hi[dim] = test;
+        rhs.lo[dim] = test;
 
         (self, rhs)
     }
 
     fn affords<D: Distance<A, K>>(&self, pt: &[A; K], rsq_range: &(D::Output, D::Output)) -> bool {
-        D::closest_distance_to_volume(self, pt) < rsq_range.1
-        // && rsq_range.0 < D::furthest_distance_to_volume(self, pt)
+        D::closest_distance_to_volume(self, pt) <= rsq_range.1
     }
 
     fn insert(&mut self, point: &[A; K]) {
-        self.lower
+        self.lo
             .iter_mut()
-            .zip(&mut self.upper)
+            .zip(&mut self.hi)
             .zip(point)
             .for_each(|((l, h), &x)| {
                 if *l > x {

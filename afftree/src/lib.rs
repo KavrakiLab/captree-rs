@@ -21,13 +21,14 @@ use std::{
 mod affordance;
 mod forest;
 
+use affordance::Aabb;
 pub use affordance::AffordanceTree;
-use affordance::Volume;
 pub use forest::PkdForest;
 
 pub trait Axis: PartialOrd + Copy + Sub<Output = Self> + Add<Output = Self> {
     const INFINITY: Self;
     const NEG_INFINITY: Self;
+    const ZERO: Self;
     const SIZE: usize;
 
     #[must_use]
@@ -45,7 +46,9 @@ pub trait AxisSimd<M>: SimdElement + Default {
     fn any(mask: M) -> bool;
 }
 
-pub trait Index: TryFrom<usize> + TryInto<usize> + Copy {}
+pub trait Index: TryFrom<usize> + TryInto<usize> + Copy {
+    const ZERO: Self;
+}
 
 pub trait IndexSimd: SimdElement + Default {
     #[must_use]
@@ -68,10 +71,10 @@ pub trait Distance<A, const K: usize> {
     fn distance(x1: &[A; K], x2: &[A; K]) -> Self::Output;
 
     #[must_use]
-    fn closest_distance_to_volume(v: &Volume<A, K>, x: &[A; K]) -> Self::Output;
+    fn closest_distance_to_volume(v: &Aabb<A, K>, x: &[A; K]) -> Self::Output;
 
     #[must_use]
-    fn furthest_distance_to_volume(v: &Volume<A, K>, x: &[A; K]) -> Self::Output;
+    fn ball_contains_aabb(aabb: &Aabb<A, K>, center: &[A; K], r: Self::Output) -> bool;
 }
 
 macro_rules! impl_axis {
@@ -79,6 +82,7 @@ macro_rules! impl_axis {
         impl Axis for $t {
             const INFINITY: Self = <$t>::INFINITY;
             const NEG_INFINITY: Self = <$t>::NEG_INFINITY;
+            const ZERO: Self = 0.0;
             const SIZE: usize = size_of::<Self>();
 
             fn is_finite(self) -> bool {
@@ -105,27 +109,28 @@ macro_rules! impl_axis {
                 }
                 total
             }
-            fn closest_distance_to_volume(v: &Volume<$t, K>, x: &[$t; K]) -> Self::Output {
+            fn closest_distance_to_volume(v: &Aabb<$t, K>, x: &[$t; K]) -> Self::Output {
                 let mut dist = 0.0;
 
                 for d in 0..K {
-                    let clamped = clamp(x[d], v.lower[d], v.upper[d]);
+                    let clamped = clamp(x[d], v.lo[d], v.hi[d]);
                     dist += (x[d] - clamped).powi(2);
                 }
 
                 dist
             }
-            fn furthest_distance_to_volume(v: &Volume<$t, K>, x: &[$t; K]) -> Self::Output {
+
+            fn ball_contains_aabb(aabb: &Aabb<$t, K>, x: &[$t; K], r: Self::Output) -> bool {
                 let mut dist = 0.0;
 
-                for d in 0..K {
-                    let lo_diff = (v.lower[d] - x[d]).abs();
-                    let hi_diff = (v.upper[d] - x[d]).abs();
+                for k in 0..K {
+                    let lo_diff = (aabb.lo[k] - x[k]).powi(2);
+                    let hi_diff = (aabb.hi[k] - x[k]).powi(2);
 
-                    dist += if lo_diff < hi_diff { hi_diff } else { lo_diff }.powi(2);
+                    dist += if lo_diff < hi_diff { hi_diff } else { lo_diff };
                 }
 
-                dist
+                dist <= r
             }
         }
 
@@ -142,7 +147,9 @@ macro_rules! impl_axis {
 
 macro_rules! impl_idx {
     ($t: ty) => {
-        impl Index for $t {}
+        impl Index for $t {
+            const ZERO: Self = 0;
+        }
 
         impl IndexSimd for $t {
             #[must_use]
@@ -281,7 +288,7 @@ impl<const K: usize> PkdTree<K> {
     pub fn query1_exact(&self, needle: [f32; K]) -> usize {
         let mut id = usize::MAX;
         let mut best_distsq = f32::INFINITY;
-        self.exact_help(0, 0, &Volume::ALL, needle, &mut id, &mut best_distsq);
+        self.exact_help(0, 0, &Aabb::ALL, needle, &mut id, &mut best_distsq);
         id
     }
 
@@ -290,7 +297,7 @@ impl<const K: usize> PkdTree<K> {
         &self,
         test_idx: usize,
         k: u8,
-        bounding_box: &Volume<f32, K>,
+        bounding_box: &Aabb<f32, K>,
         point: [f32; K],
         best_id: &mut usize,
         best_distsq: &mut f32,
@@ -313,9 +320,9 @@ impl<const K: usize> PkdTree<K> {
         let test = self.tests[test_idx];
 
         let mut bb_below = *bounding_box;
-        bb_below.upper[k as usize] = test;
+        bb_below.hi[k as usize] = test;
         let mut bb_above = *bounding_box;
-        bb_above.lower[k as usize] = test;
+        bb_above.lo[k as usize] = test;
 
         let next_k = (k + 1) % K as u8;
         if point[k as usize] < test {
