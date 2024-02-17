@@ -158,10 +158,7 @@ where
                     for ak in afforded.iter_mut() {
                         ak.reserve(ak.len() + in_range.len());
                     }
-                    for p in in_range
-                        .into_iter()
-                        .filter(|p| cell.affords::<D>(p, &r_range))
-                    {
+                    for p in in_range {
                         aabb.insert(&p);
                         for k in 0..K {
                             afforded[k].push(p[k]);
