@@ -77,12 +77,6 @@ where
     R: PartialOrd + Copy,
 {
     #[must_use]
-    #[allow(
-        clippy::cast_possible_truncation,
-        clippy::float_cmp,
-        clippy::too_many_lines,
-        clippy::missing_panics_doc
-    )]
     /// Construct a new affordance tree containing all the points in `points`.
     /// `r_range` is a `(minimum, maximum)` pair containing the lower and upper bound on the
     /// radius of the balls which will be queried against the tree.
@@ -118,6 +112,8 @@ where
         ]
         .into_boxed_slice();
 
+        let r_max_l1 = D::as_l1(r_range.1);
+
         Self::new_help(
             &mut points2,
             &mut tests,
@@ -127,6 +123,7 @@ where
             0,
             0,
             r_range,
+            r_max_l1,
             Vec::new(),
             Aabb::ALL,
         )
@@ -152,6 +149,7 @@ where
         k: usize,
         i: usize,
         r_range: (R, R),
+        r_max_l1: A,
         in_range: Vec<[A; K]>,
         cell: Aabb<A, K>,
     ) -> Result<(), ()> {
@@ -165,7 +163,13 @@ where
                 }
 
                 if !D::ball_contains_aabb(&cell, &rep, r_range.0) {
-                    for p in in_range {
+                    for ak in afforded.iter_mut() {
+                        ak.reserve(ak.len() + in_range.len());
+                    }
+                    for p in in_range
+                        .into_iter()
+                        .filter(|p| cell.affords::<D>(p, &r_range))
+                    {
                         aabb.insert(&p);
                         for k in 0..K {
                             afforded[k].push(p[k]);
@@ -183,14 +187,38 @@ where
 
         let (lhs, rhs) = points.split_at_mut(points.len() / 2);
         let (lo_vol, hi_vol) = cell.split(test, k);
-        let mut lo_afford = in_range;
-        let mut hi_afford = lo_afford.clone();
+
+        let lo_too_small = D::distance(&lo_vol.lo, &lo_vol.hi) <= r_range.0;
+        let hi_too_small = D::distance(&hi_vol.lo, &hi_vol.hi) <= r_range.0;
 
         // retain only points which might be in the affordance buffer for the split-out cells
-        lo_afford.retain(|pt| lo_vol.affords::<D>(pt, &r_range));
-        lo_afford.extend(rhs.iter().filter(|pt| lo_vol.affords::<D>(pt, &r_range)));
-        hi_afford.retain(|pt| hi_vol.affords::<D>(pt, &r_range));
-        hi_afford.extend(lhs.iter().filter(|pt| hi_vol.affords::<D>(pt, &r_range)));
+        let (lo_afford, hi_afford) = match (lo_too_small, hi_too_small) {
+            (false, false) => {
+                let mut lo_afford = in_range;
+                let mut hi_afford = lo_afford.clone();
+                lo_afford.retain(|pt| lo_vol.affords::<D>(pt, &r_range));
+                lo_afford.extend(rhs.iter().filter(|pt| pt[k] <= test + r_max_l1));
+                hi_afford.retain(|pt| hi_vol.affords::<D>(pt, &r_range));
+                hi_afford.extend(lhs.iter().filter(|pt| test - r_max_l1 <= pt[k]));
+
+                (lo_afford, hi_afford)
+            }
+            (false, true) => {
+                let mut lo_afford = in_range;
+                lo_afford.retain(|pt| lo_vol.affords::<D>(pt, &r_range));
+                lo_afford.extend(rhs.iter().filter(|pt| pt[k] <= test + r_max_l1));
+
+                (lo_afford, Vec::new())
+            }
+            (true, false) => {
+                let mut hi_afford = in_range;
+                hi_afford.retain(|pt| hi_vol.affords::<D>(pt, &r_range));
+                hi_afford.extend(lhs.iter().filter(|pt| test - r_max_l1 <= pt[k]));
+
+                (Vec::new(), hi_afford)
+            }
+            (true, true) => (Vec::new(), Vec::new()),
+        };
 
         let next_k = (k + 1) % K;
         Self::new_help(
@@ -202,6 +230,7 @@ where
             next_k,
             2 * i + 1,
             r_range,
+            r_max_l1,
             lo_afford,
             lo_vol,
         )?;
@@ -214,6 +243,7 @@ where
             next_k,
             2 * i + 2,
             r_range,
+            r_max_l1,
             hi_afford,
             hi_vol,
         )?;

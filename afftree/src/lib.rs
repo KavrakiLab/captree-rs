@@ -75,6 +75,9 @@ pub trait Distance<A, const K: usize> {
 
     #[must_use]
     fn ball_contains_aabb(aabb: &Aabb<A, K>, center: &[A; K], r: Self::Output) -> bool;
+
+    #[must_use]
+    fn as_l1(r: Self::Output) -> A;
 }
 
 macro_rules! impl_axis {
@@ -131,6 +134,10 @@ macro_rules! impl_axis {
                 }
 
                 dist <= r
+            }
+
+            fn as_l1(r: $t) -> $t {
+                r.sqrt()
             }
         }
 
