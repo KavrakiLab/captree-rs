@@ -15,28 +15,6 @@ pub fn morton_filter(points: &mut Vec<[f32; 3]>, min_sep: f32) {
         [2, 1, 0],
     ];
 
-    let (aabb_min, aabb_max) = normalize(points);
-    for permutation in PERMUTATIONS_3D {
-        points.sort_by_cached_key(|point| morton_index(point, permutation));
-        let mut i = 0;
-        let mut j = 1;
-        while j < points.len() {
-            if distsq(&points[i], &points[j]) > min_sep {
-                i += 1;
-                points[i] = points[j];
-            }
-            j += 1;
-        }
-        points.truncate(i + 1);
-    }
-    denormalize(points, &aabb_min, &aabb_max);
-}
-
-fn distsq(a: &[f32; 3], b: &[f32; 3]) -> f32 {
-    a.iter().zip(b).map(|(a, b)| (a - b).powi(2)).sum()
-}
-
-fn normalize(points: &mut [[f32; 3]]) -> ([f32; 3], [f32; 3]) {
     let mut aabb_min = [f32::INFINITY; 3];
     let mut aabb_max = [f32::NEG_INFINITY; 3];
 
@@ -51,40 +29,78 @@ fn normalize(points: &mut [[f32; 3]]) -> ([f32; 3], [f32; 3]) {
         }
     }
 
-    for k in 0..3 {
-        let width = aabb_max[k] - aabb_min[k];
-        for point in &mut *points {
-            point[k] = (point[k] - aabb_min[k]) / width;
+    let rsq = min_sep * min_sep;
+    for permutation in PERMUTATIONS_3D {
+        points.sort_by_cached_key(|point| morton_index(point, &aabb_min, &aabb_max, permutation));
+        let mut i = 0;
+        let mut j = 1;
+        while j < points.len() {
+            if distsq(&points[i], &points[j]) > rsq {
+                i += 1;
+                points[i] = points[j];
+            }
+            j += 1;
         }
-    }
-
-    (aabb_min, aabb_max)
-}
-
-fn denormalize(points: &mut [[f32; 3]], aabb_min: &[f32; 3], aabb_max: &[f32; 3]) {
-    for k in 0..3 {
-        let width = aabb_max[k] - aabb_min[k];
-        for point in &mut *points {
-            point[k] = point[k] * width + aabb_min[k];
-        }
+        points.truncate(i + 1);
     }
 }
 
+fn distsq(a: &[f32; 3], b: &[f32; 3]) -> f32 {
+    a.iter().zip(b).map(|(a, b)| (a - b).powi(2)).sum()
+}
 #[allow(
     clippy::cast_possible_truncation,
     clippy::cast_sign_loss,
     clippy::cast_precision_loss
 )]
-fn morton_index(point: &[f32; 3], permutation: [u8; 3]) -> u32 {
+fn morton_index(
+    point: &[f32; 3],
+    aabb_min: &[f32; 3],
+    aabb_max: &[f32; 3],
+    permutation: [u8; 3],
+) -> u32 {
     const WIDTH: u32 = u32::BITS / 3;
     const MASK: u32 = 0b001_001_001_001_001_001_001_001_001_001;
     let i0 = permutation[0] as usize;
     let i1 = permutation[1] as usize;
     let i2 = permutation[2] as usize;
 
-    let x0 = (point[i0] * WIDTH as f32) as u32;
-    let x1 = (point[i1] * WIDTH as f32) as u32;
-    let x2 = (point[i2] * WIDTH as f32) as u32;
+    let x0 = ((point[i0] - aabb_min[i0]) / (aabb_max[i0] - aabb_min[i0]) * WIDTH as f32) as u32;
+    let x1 = ((point[i1] - aabb_min[i1]) / (aabb_max[i1] - aabb_min[i1]) * WIDTH as f32) as u32;
+    let x2 = ((point[i2] - aabb_min[i2]) / (aabb_max[i2] - aabb_min[i2]) * WIDTH as f32) as u32;
 
     x0.pdep(MASK) | x1.pdep(MASK << 1) | x2.pdep(MASK << 2)
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::morton_filter;
+
+    #[test]
+    fn one_point() {
+        let mut points = vec![[0.0; 3]];
+        morton_filter(&mut points, 0.01);
+        assert_eq!(points, vec![[0.0; 3]]);
+    }
+
+    #[test]
+    fn duplicate() {
+        let mut points = vec![[0.0; 3]; 2];
+        morton_filter(&mut points, 0.01);
+        assert_eq!(points, vec![[0.0; 3]]);
+    }
+
+    #[test]
+    fn too_close() {
+        let mut points = vec![[0.0; 3], [0.001; 3]];
+        morton_filter(&mut points, 0.01);
+        assert_eq!(points, vec![[0.0; 3]]);
+    }
+
+    #[test]
+    fn too_far() {
+        let mut points = vec![[0.0; 3], [0.01; 3]];
+        morton_filter(&mut points, 0.01);
+        assert_eq!(points, vec![[0.0; 3], [0.01; 3]]);
+    }
 }

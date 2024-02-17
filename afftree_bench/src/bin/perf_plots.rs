@@ -129,7 +129,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         },
     ];
 
-    let mut r_filter = 0.001;
+    let mut r_filter = 0.01;
     loop {
         let mut new_points = points.to_vec();
         morton_filter(&mut new_points, r_filter);
@@ -140,7 +140,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             &mut f_construct,
             &mut f_mem,
         )?;
-        r_filter *= 1.03;
+        r_filter *= 1.02;
         if new_points.len() < 500 {
             break;
         }
