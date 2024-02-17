@@ -72,20 +72,21 @@ fn main() -> Result<(), Box<dyn Error>> {
         parse_trace_csv(&args[2])?
     };
 
-    let rsq_range = (
-        all_trace
-            .iter()
-            .map(|x| x.1)
-            .min_by(|a, b| a.partial_cmp(b).unwrap())
-            .ok_or("no points")?
-            .powi(2),
-        all_trace
-            .iter()
-            .map(|x| x.1)
-            .max_by(|a, b| a.partial_cmp(b).unwrap())
-            .ok_or("no points")?
-            .powi(2),
-    );
+    // let rsq_range = (
+    //     all_trace
+    //         .iter()
+    //         .map(|x| x.1)
+    //         .min_by(|a, b| a.partial_cmp(b).unwrap())
+    //         .ok_or("no points")?
+    //         .powi(2),
+    //     all_trace
+    //         .iter()
+    //         .map(|x| x.1)
+    //         .max_by(|a, b| a.partial_cmp(b).unwrap())
+    //         .ok_or("no points")?
+    //         .powi(2),
+    // );
+    let rsq_range = (0.01 * 0.01, 0.08 * 0.08);
 
     println!("number of points: {}", points.len());
     println!("number of tests: {}", all_trace.len());

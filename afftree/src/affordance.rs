@@ -188,7 +188,10 @@ where
                 lo_afford.retain(|pt| lo_vol.affords::<D>(pt, &r_range));
                 lo_afford.extend(rhs.iter().filter(|pt| pt[k] <= test + r_max_l1));
                 hi_afford.retain(|pt| hi_vol.affords::<D>(pt, &r_range));
-                hi_afford.extend(lhs.iter().filter(|pt| test - r_max_l1 <= pt[k]));
+                hi_afford.extend(
+                    lhs.iter()
+                        .filter(|pt| pt[k].is_finite() && test - r_max_l1 <= pt[k]),
+                );
 
                 (lo_afford, hi_afford)
             }
@@ -202,7 +205,10 @@ where
             (true, false) => {
                 let mut hi_afford = in_range;
                 hi_afford.retain(|pt| hi_vol.affords::<D>(pt, &r_range));
-                hi_afford.extend(lhs.iter().filter(|pt| test - r_max_l1 <= pt[k]));
+                hi_afford.extend(
+                    lhs.iter()
+                        .filter(|pt| pt[k].is_finite() && test - r_max_l1 <= pt[k]),
+                );
 
                 (Vec::new(), hi_afford)
             }
