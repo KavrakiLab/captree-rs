@@ -7,7 +7,7 @@ use crate::{
 };
 use std::{
     marker::PhantomData,
-    mem::{align_of, size_of},
+    mem::size_of,
     ops::{AddAssign, Mul, Sub},
     simd::{
         cmp::{SimdPartialEq, SimdPartialOrd},
@@ -15,14 +15,6 @@ use std::{
         LaneCount, Mask, Simd, SupportedLaneCount,
     },
 };
-
-const MAX_SIMD_SIZE_BYTES: usize = 256 / 8;
-const MAX_LANE_COUNT: usize = MAX_SIMD_SIZE_BYTES / size_of::<f32>();
-
-#[repr(C)]
-#[repr(align(64))]
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-struct CacheAlign<A>([A; MAX_LANE_COUNT]);
 
 #[derive(Clone, Debug, PartialEq)]
 #[allow(clippy::module_name_repetitions)]
@@ -337,10 +329,6 @@ where
         Mask<isize, L>: From<<Simd<A, L> as SimdPartialEq>::Mask>,
         A: Axis + AxisSimd<<Simd<A, L> as SimdPartialEq>::Mask>,
     {
-        assert!(
-            align_of::<CacheAlign<A>>() >= align_of::<Simd<A, L>>(),
-            "SIMD vector must be less aligned than internal values",
-        );
         let zs = forward_pass_simd(&self.tests, centers);
 
         let mut inbounds = Mask::splat(true);
