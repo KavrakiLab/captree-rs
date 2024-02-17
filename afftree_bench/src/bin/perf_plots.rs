@@ -14,6 +14,7 @@ use afftree_bench::{
 };
 #[allow(unused_imports)]
 use kiddo::SquaredEuclidean;
+use morton_filter::morton_filter;
 use rand::seq::SliceRandom;
 use rand::Rng;
 use rand_chacha::rand_core::SeedableRng;
@@ -128,14 +129,21 @@ fn main() -> Result<(), Box<dyn Error>> {
         },
     ];
 
-    for n_points in (1 << 8..=points.len()).step_by(1 << 8) {
+    let mut r_filter = 0.001;
+    loop {
+        let mut new_points = points.to_vec();
+        morton_filter(&mut new_points, r_filter);
         do_row(
-            &points[..n_points],
+            &new_points,
             &mut benchmarks,
             rsq_range,
             &mut f_construct,
             &mut f_mem,
         )?;
+        r_filter *= 1.03;
+        if new_points.len() < 500 {
+            break;
+        }
     }
 
     Ok(())
