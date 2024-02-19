@@ -2,6 +2,8 @@
 
 //! A filtering algorithm for 3D point clouds.
 
+use std::ops::BitOr;
+
 use bitintr::Pdep;
 
 /// Filter out `points` such that points within `min_sep` of each other may be removed.
@@ -61,15 +63,16 @@ fn morton_index(
 ) -> u32 {
     const WIDTH: u32 = u32::BITS / 3;
     const MASK: u32 = 0b001_001_001_001_001_001_001_001_001_001;
-    let i0 = permutation[0] as usize;
-    let i1 = permutation[1] as usize;
-    let i2 = permutation[2] as usize;
 
-    let x0 = ((point[i0] - aabb_min[i0]) / (aabb_max[i0] - aabb_min[i0]) * WIDTH as f32) as u32;
-    let x1 = ((point[i1] - aabb_min[i1]) / (aabb_max[i1] - aabb_min[i1]) * WIDTH as f32) as u32;
-    let x2 = ((point[i2] - aabb_min[i2]) / (aabb_max[i2] - aabb_min[i2]) * WIDTH as f32) as u32;
-
-    x0.pdep(MASK) | x1.pdep(MASK << 1) | x2.pdep(MASK << 2)
+    permutation
+        .map(usize::from)
+        .into_iter()
+        .enumerate()
+        .map(|(i, k)| {
+            ((((point[k] - aabb_min[k]) / (aabb_max[k] - aabb_min[k])) * WIDTH as f32) as u32)
+                .pdep(MASK << i)
+        })
+        .fold(0, BitOr::bitor)
 }
 
 #[cfg(test)]
