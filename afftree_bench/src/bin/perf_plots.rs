@@ -161,7 +161,7 @@ fn do_row(
     let (pkdt, pkdt_time) = stopwatch(|| PkdTree::new(points));
 
     let (afftree, afftree_time) =
-        stopwatch(|| AffordanceTree::<3>::new(points, rsq_range).unwrap());
+        stopwatch(|| AffordanceTree::<3, f32, u32>::new(points, rsq_range).unwrap());
     writeln!(
         f_construct,
         "{},{},{},{}",
