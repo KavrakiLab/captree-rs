@@ -1,12 +1,12 @@
 [package]
-name = "afftree_bench"
+name = "bench"
 version = "0.1.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-afftree = {version = "0.1.0", path = "../afftree"}
+captree = {version = "0.1.0", path = "../captree"}
 morton_filter = {verstion = "0.1.0", path = "../morton_filter"}
 kiddo = {version = "4.0.0", features = ["simd"]}
 rand = "0.8.5"

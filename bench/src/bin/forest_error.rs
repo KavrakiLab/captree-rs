@@ -1,5 +1,5 @@
-use afftree::PkdForest;
-use afftree_bench::{fuzz_pointcloud, get_points, make_needles};
+use bench::{fuzz_pointcloud, get_points, make_needles};
+use captree::PkdForest;
 use kiddo::SquaredEuclidean;
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;

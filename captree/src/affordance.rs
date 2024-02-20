@@ -92,7 +92,8 @@ where
         // hack: just pad with infinity to make it a power of 2
         let mut points2 = vec![[A::INFINITY; K]; n2].into_boxed_slice();
         points2[..points.len()].copy_from_slice(points);
-        let mut afforded = [0; K].map(|_| Vec::with_capacity(n2));
+        // hack - reduce number of reallocations by allocating a lot of points from the start
+        let mut afforded = [(); K].map(|()| Vec::with_capacity(n2 * 1000));
         let mut starts = vec![I::ZERO; n2 + 1].into_boxed_slice();
 
         let mut aabbs = vec![

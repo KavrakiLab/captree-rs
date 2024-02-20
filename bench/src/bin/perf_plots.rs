@@ -7,11 +7,11 @@ use std::fs::File;
 use std::hint::black_box;
 use std::io::Write;
 
-use afftree::{AffordanceTree, PkdTree};
-use afftree_bench::{
+use bench::{
     fuzz_pointcloud, parse_pointcloud_csv, parse_trace_csv, simd_trace_new, stopwatch, SimdTrace,
     Trace,
 };
+use captree::{AffordanceTree, PkdTree};
 #[allow(unused_imports)]
 use kiddo::SquaredEuclidean;
 use morton_filter::morton_filter;
@@ -93,17 +93,17 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!("number of tests: {}", all_trace.len());
     println!("radius-squared range: {rsq_range:?}");
 
-    let afftree = AffordanceTree::<3>::new(&points, rsq_range).unwrap();
+    let captree = AffordanceTree::<3>::new(&points, rsq_range).unwrap();
 
     let collide_trace: Box<Trace> = all_trace
         .iter()
-        .filter(|(center, r)| afftree.collides(center, *r))
+        .filter(|(center, r)| captree.collides(center, *r))
         .copied()
         .collect();
 
     let no_collide_trace: Box<Trace> = all_trace
         .iter()
-        .filter(|(center, r)| !afftree.collides(center, *r))
+        .filter(|(center, r)| !captree.collides(center, *r))
         .copied()
         .collect();
 
@@ -160,7 +160,7 @@ fn do_row(
 
     let (pkdt, pkdt_time) = stopwatch(|| PkdTree::new(points));
 
-    let (afftree, afftree_time) =
+    let (captree, captree_time) =
         stopwatch(|| AffordanceTree::<3, f32, u32>::new(points, rsq_range).unwrap());
     writeln!(
         f_construct,
@@ -168,7 +168,7 @@ fn do_row(
         points.len(),
         kdt_time.as_secs_f64(),
         pkdt_time.as_secs_f64(),
-        afftree_time.as_secs_f64(),
+        captree_time.as_secs_f64(),
     )?;
 
     writeln!(
@@ -176,7 +176,7 @@ fn do_row(
         "{},{},{}",
         points.len(),
         pkdt.memory_used(),
-        afftree.memory_used()
+        captree.memory_used()
     )?;
 
     for Benchmark {
@@ -210,14 +210,14 @@ fn do_row(
                 black_box(pkdt.might_collide_simd(centers, radii * radii));
             }
         });
-        let (_, afftree_total_seq_q_time) = stopwatch(|| {
+        let (_, captree_total_seq_q_time) = stopwatch(|| {
             for (center, radius) in trace.iter() {
-                black_box(afftree.collides(center, radius.powi(2)));
+                black_box(captree.collides(center, radius.powi(2)));
             }
         });
-        let (_, afftree_total_simd_q_time) = stopwatch(|| {
+        let (_, captree_total_simd_q_time) = stopwatch(|| {
             for (centers, radii) in simd_trace.iter() {
-                black_box(afftree.collides_simd(centers, radii * radii));
+                black_box(captree.collides_simd(centers, radii * radii));
             }
         });
 
@@ -230,8 +230,8 @@ fn do_row(
             kdt_total_q_time.as_secs_f64() / trace_len,
             pkdt_total_seq_q_time.as_secs_f64() / trace_len,
             pkdt_total_simd_q_time.as_secs_f64() / trace_len,
-            afftree_total_seq_q_time.as_secs_f64() / trace_len,
-            afftree_total_simd_q_time.as_secs_f64() / trace_len,
+            captree_total_seq_q_time.as_secs_f64() / trace_len,
+            captree_total_simd_q_time.as_secs_f64() / trace_len,
         )?;
     }
 

@@ -19,7 +19,7 @@ def plot_build_times(fname: str):
     n_points = []
     kdt_build_times = []
     forward_times = []
-    afftree_build_times = []
+    captree_build_times = []
 
     with open(fname) as f:
         reader = csv.reader(f, delimiter=",")
@@ -28,11 +28,13 @@ def plot_build_times(fname: str):
             n_points.append(int(row[0]))
             kdt_build_times.append(float(row[1]))
             forward_times.append(float(row[2]))
-            afftree_build_times.append(float(row[3]))
+            captree_build_times.append(float(row[3]))
 
-    plt.plot(n_points, np.asarray(kdt_build_times) * 1e3, label="kiddo (k-d tree)")
+    plt.plot(n_points,
+             np.asarray(kdt_build_times) * 1e3,
+             label="kiddo (k-d tree)")
     plt.plot(n_points, np.asarray(forward_times) * 1e3, label="forward tree")
-    plt.plot(n_points, np.asarray(afftree_build_times) * 1e3, label="afftree")
+    plt.plot(n_points, np.asarray(captree_build_times) * 1e3, label="captree")
     plt.legend()
     plt.xlabel("Number of points in cloud")
     plt.ylabel("Construction time (ms)")
@@ -43,8 +45,8 @@ def plot_build_times(fname: str):
 def plot_query_times(fname: str, title: str):
     n_points = []
     n_tests = []
-    afftree_seq_times = []
-    afftree_simd_times = []
+    captree_seq_times = []
+    captree_simd_times = []
     kdt_times = []
     forward_seq_times = []
     forward_simd_times = []
@@ -58,20 +60,22 @@ def plot_query_times(fname: str, title: str):
             kdt_times.append(float(row[2]))
             forward_seq_times.append(float(row[3]))
             forward_simd_times.append(float(row[4]))
-            afftree_seq_times.append(float(row[5]))
-            afftree_simd_times.append(float(row[6]))
+            captree_seq_times.append(float(row[5]))
+            captree_simd_times.append(float(row[6]))
 
     plt.plot(n_points, np.asarray(kdt_times) * 1e9, label="kiddo (k-d tree)")
-    plt.plot(
-        n_points, np.asarray(forward_seq_times) * 1e9, label="forward tree (sequential)"
-    )
-    plt.plot(
-        n_points, np.asarray(forward_simd_times) * 1e9, label="forward tree (SIMD)"
-    )
-    plt.plot(
-        n_points, np.asarray(afftree_seq_times) * 1e9, label="afftree (sequential)"
-    )
-    plt.plot(n_points, np.asarray(afftree_simd_times) * 1e9, label="afftree (SIMD)")
+    plt.plot(n_points,
+             np.asarray(forward_seq_times) * 1e9,
+             label="forward tree (sequential)")
+    plt.plot(n_points,
+             np.asarray(forward_simd_times) * 1e9,
+             label="forward tree (SIMD)")
+    plt.plot(n_points,
+             np.asarray(captree_seq_times) * 1e9,
+             label="captree (sequential)")
+    plt.plot(n_points,
+             np.asarray(captree_simd_times) * 1e9,
+             label="captree (SIMD)")
     plt.legend()
     plt.semilogy()
     plt.xlabel("Number of points in cloud")
@@ -83,7 +87,7 @@ def plot_query_times(fname: str, title: str):
 def plot_mem(fname: str):
     n_points = []
     forward_mem = []
-    afftree_mem = []
+    captree_mem = []
 
     with open(fname) as f:
         reader = csv.reader(f, delimiter=",")
@@ -91,10 +95,10 @@ def plot_mem(fname: str):
         for row in reader:
             n_points.append(int(row[0]))
             forward_mem.append(int(row[1]))
-            afftree_mem.append(int(row[2]))
+            captree_mem.append(int(row[2]))
 
     plt.plot(n_points, forward_mem, label="Forward tree")
-    plt.plot(n_points, afftree_mem, label="Afftree")
+    plt.plot(n_points, captree_mem, label="captree")
     plt.semilogy()
     plt.legend()
     plt.xlabel("Number of points in cloud")
