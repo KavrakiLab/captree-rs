@@ -1,7 +1,5 @@
 //! Power-of-two k-d forests.
 
-use std::mem::MaybeUninit;
-
 #[cfg(feature = "simd")]
 use std::simd::{
     cmp::SimdPartialOrd, ptr::SimdConstPtr, LaneCount, Mask, Simd, SupportedLaneCount,
@@ -23,19 +21,17 @@ pub struct PkdForest<const K: usize, const T: usize> {
 }
 
 impl<const K: usize, const T: usize> PkdForest<K, T> {
+    const T_NONE: Option<RandomizedTree<K>> = None;
     #[allow(clippy::cast_possible_truncation)]
     #[must_use]
     pub fn new(points: &[[f32; K]]) -> Self {
-        unsafe {
-            let mut buf: [MaybeUninit<RandomizedTree<K>>; T] = MaybeUninit::uninit().assume_init();
-
-            for (i, tree) in buf.iter_mut().enumerate() {
-                tree.write(RandomizedTree::new(points, i as u32));
-            }
-
-            PkdForest {
-                test_seqs: buf.map(|x| x.assume_init()),
-            }
+        let mut trees = [Self::T_NONE; T];
+        trees
+            .iter_mut()
+            .enumerate()
+            .for_each(|(t, opt)| *opt = Some(RandomizedTree::new(points, t as u32)));
+        Self {
+            test_seqs: trees.map(Option::unwrap),
         }
     }
 
