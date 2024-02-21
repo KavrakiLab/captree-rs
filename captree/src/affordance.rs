@@ -1,13 +1,11 @@
 //! Affordance trees, a novel kind of collision tree with excellent performance, branchless queries,
 //! and SIMD batch parallelism.
 
-use crate::{
-    forward_pass, forward_pass_simd, median_partition, Axis, AxisSimd, Distance, Index, IndexSimd,
-    SquaredEuclidean,
-};
+use crate::{forward_pass, median_partition, Axis, Distance, Index, SquaredEuclidean};
+use std::{marker::PhantomData, mem::size_of};
+
+#[cfg(feature = "simd")]
 use std::{
-    marker::PhantomData,
-    mem::size_of,
     ops::{AddAssign, Mul, Sub},
     simd::{
         cmp::{SimdPartialEq, SimdPartialOrd},
@@ -15,6 +13,9 @@ use std::{
         LaneCount, Mask, Simd, SupportedLaneCount,
     },
 };
+
+#[cfg(feature = "simd")]
+use crate::{forward_pass_simd, AxisSimd, IndexSimd};
 
 #[derive(Clone, Debug, PartialEq)]
 #[allow(clippy::module_name_repetitions)]
@@ -307,6 +308,7 @@ where
 }
 
 #[allow(clippy::mismatching_type_param_order)]
+#[cfg(feature = "simd")]
 impl<A, I, const K: usize> AffordanceTree<K, A, I, SquaredEuclidean, A>
 where
     I: IndexSimd,

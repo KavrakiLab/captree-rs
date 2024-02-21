@@ -34,7 +34,7 @@ def plot_build_times(fname: str):
              np.asarray(kdt_build_times) * 1e3,
              label="kiddo (k-d tree)")
     plt.plot(n_points, np.asarray(forward_times) * 1e3, label="forward tree")
-    plt.plot(n_points, np.asarray(captree_build_times) * 1e3, label="captree")
+    plt.plot(n_points, np.asarray(captree_build_times) * 1e3, label="CAPT")
     plt.legend()
     plt.xlabel("Number of points in cloud")
     plt.ylabel("Construction time (ms)")
@@ -98,7 +98,7 @@ def plot_mem(fname: str):
             captree_mem.append(int(row[2]))
 
     plt.plot(n_points, forward_mem, label="Forward tree")
-    plt.plot(n_points, captree_mem, label="captree")
+    plt.plot(n_points, captree_mem, label="CAPT")
     plt.semilogy()
     plt.legend()
     plt.xlabel("Number of points in cloud")

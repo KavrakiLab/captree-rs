@@ -1,21 +1,15 @@
 //! Efficient, branchless nearest-neighbor trees for robot collision checking.
 
-#![feature(portable_simd)]
-#![feature(slice_from_ptr_range)]
+#![cfg_attr(feature = "simd", feature(portable_simd))]
 #![warn(clippy::pedantic)]
 
-use core::{
-    mem::size_of,
-    simd::{LaneCount, Mask, Simd, SupportedLaneCount},
-};
+#[cfg(feature = "simd")]
+use std::simd::{prelude::*, LaneCount, Mask, Simd, SimdElement, SupportedLaneCount};
+
 use std::{
     fmt::Debug,
+    mem::size_of,
     ops::{Add, Sub},
-    simd::{
-        cmp::{SimdPartialEq, SimdPartialOrd},
-        ptr::SimdConstPtr,
-        SimdElement,
-    },
 };
 
 mod affordance;
@@ -41,6 +35,7 @@ pub trait Axis: PartialOrd + Copy + Sub<Output = Self> + Add<Output = Self> {
     fn in_between(self, rhs: Self) -> Self;
 }
 
+#[cfg(feature = "simd")]
 pub trait AxisSimd<M>: SimdElement + Default {
     #[must_use]
     fn any(mask: M) -> bool;
@@ -50,6 +45,7 @@ pub trait Index: TryFrom<usize> + TryInto<usize> + Copy {
     const ZERO: Self;
 }
 
+#[cfg(feature = "simd")]
 pub trait IndexSimd: SimdElement + Default {
     #[must_use]
     /// Convert a SIMD array of `Self` to a SIMD array of `usize`, without checking that each
@@ -141,6 +137,7 @@ macro_rules! impl_axis {
             }
         }
 
+        #[cfg(feature = "simd")]
         impl<const L: usize> AxisSimd<Mask<$tm, L>> for $t
         where
             LaneCount<L>: SupportedLaneCount,
@@ -158,6 +155,7 @@ macro_rules! impl_idx {
             const ZERO: Self = 0;
         }
 
+        #[cfg(feature = "simd")]
         impl IndexSimd for $t {
             #[must_use]
             unsafe fn to_simd_usize_unchecked<const L: usize>(x: Simd<Self, L>) -> Simd<usize, L>
@@ -269,6 +267,7 @@ impl<const K: usize> PkdTree<K> {
 
     #[must_use]
     #[allow(clippy::cast_possible_wrap)]
+    #[cfg(feature = "simd")]
     pub fn might_collide_simd<const L: usize>(
         &self,
         needles: &[Simd<f32, L>; K],
@@ -399,6 +398,7 @@ fn forward_pass<A: Axis, const K: usize>(tests: &[A], point: &[A; K]) -> usize {
 
 #[inline]
 #[allow(clippy::cast_possible_wrap)]
+#[cfg(feature = "simd")]
 fn forward_pass_simd<A, const K: usize, const L: usize>(
     tests: &[A],
     centers: &[Simd<A, L>; K],
@@ -477,6 +477,7 @@ mod tests {
 
     #[test]
     #[allow(clippy::cast_possible_wrap)]
+    #[cfg(feature = "simd")]
     fn multi_query() {
         let points = vec![
             [0.1, 0.1],

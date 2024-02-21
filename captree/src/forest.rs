@@ -1,11 +1,13 @@
 //! Power-of-two k-d forests.
 
-use std::{
-    mem::MaybeUninit,
-    simd::{cmp::SimdPartialOrd, ptr::SimdConstPtr, LaneCount, Mask, Simd, SupportedLaneCount},
+use std::mem::MaybeUninit;
+
+#[cfg(feature = "simd")]
+use std::simd::{
+    cmp::SimdPartialOrd, ptr::SimdConstPtr, LaneCount, Mask, Simd, SupportedLaneCount,
 };
 
-use crate::{distsq, forward_pass, median_partition};
+use crate::{distsq, median_partition};
 
 #[derive(Clone, Debug)]
 struct RandomizedTree<const K: usize> {
@@ -44,7 +46,7 @@ impl<const K: usize, const T: usize> PkdForest<K, T> {
     pub fn approx_nearest(&self, needle: [f32; K]) -> ([f32; K], f32) {
         self.test_seqs
             .iter()
-            .map(|t| t.points[forward_pass(&t.tests, &needle)])
+            .map(|t| t.points[t.forward_pass(&needle)])
             .map(|point| (point, distsq(needle, point)))
             .min_by(|(_, d1), (_, d2)| d1.partial_cmp(d2).unwrap())
             .unwrap()
@@ -54,10 +56,11 @@ impl<const K: usize, const T: usize> PkdForest<K, T> {
     pub fn might_collide(&self, needle: [f32; K], r_squared: f32) -> bool {
         self.test_seqs
             .iter()
-            .any(|t| distsq(t.points[forward_pass(&t.tests, &needle)], needle) < r_squared)
+            .any(|t| distsq(t.points[t.forward_pass(&needle)], needle) < r_squared)
     }
 
     #[must_use]
+    #[cfg(feature = "simd")]
     pub fn might_collide_simd<const L: usize>(
         &self,
         needles: &[Simd<f32, L>; K],
@@ -138,7 +141,24 @@ impl<const K: usize> RandomizedTree<K> {
         }
     }
 
+    fn forward_pass(&self, point: &[f32; K]) -> usize {
+        let mut test_idx = 0;
+        let mut k = 0;
+        let mut state = self.seed;
+        for _ in 0..self.tests.len().trailing_ones() {
+            test_idx = 2 * test_idx
+                + 1
+                + usize::from(unsafe { *self.tests.get_unchecked(test_idx) } <= point[k]);
+            state = xorshift(state);
+            k = state as usize % K;
+        }
+
+        // retrieve affordance buffer location
+        test_idx - self.tests.len()
+    }
+
     #[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
+    #[cfg(feature = "simd")]
     /// Perform a masked SIMD query of this tree, only determining the location of the nearest
     /// neighbors for points in `mask`.
     fn mask_query<const L: usize>(

@@ -6,7 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-captree = {version = "0.1.0", path = "../captree"}
+captree = {version = "0.1.0", path = "../captree", features = ["simd"]}
 morton_filter = {verstion = "0.1.0", path = "../morton_filter"}
 kiddo = {version = "4.0.0", features = ["simd"]}
 rand = "0.8.5"
