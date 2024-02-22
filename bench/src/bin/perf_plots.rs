@@ -129,7 +129,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         },
     ];
 
-    let mut r_filter = 0.01;
+    let mut r_filter = 0.001;
     loop {
         let mut new_points = points.to_vec();
         morton_filter(&mut new_points, r_filter);

@@ -69,7 +69,8 @@ fn morton_index(
         .into_iter()
         .enumerate()
         .map(|(i, k)| {
-            ((((point[k] - aabb_min[k]) / (aabb_max[k] - aabb_min[k])) * WIDTH as f32) as u32)
+            ((((point[k] - aabb_min[k]) / (aabb_max[k] - aabb_min[k])) * (1 << WIDTH) as f32)
+                as u32)
                 .pdep(MASK << i)
         })
         .fold(0, BitOr::bitor)
