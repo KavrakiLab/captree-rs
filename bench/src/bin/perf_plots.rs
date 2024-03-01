@@ -6,12 +6,14 @@ use std::error::Error;
 use std::fs::File;
 use std::hint::black_box;
 use std::io::Write;
+use std::simd::f32x8;
+use std::time::Duration;
 
 use bench::{
     fuzz_pointcloud, parse_pointcloud_csv, parse_trace_csv, simd_trace_new, stopwatch, SimdTrace,
     Trace,
 };
-use captree::{AffordanceTree, PkdTree};
+use captree::{AffordanceTree, PkdForest, PkdTree};
 #[allow(unused_imports)]
 use kiddo::SquaredEuclidean;
 use morton_filter::morton_filter;
@@ -162,13 +164,35 @@ fn do_row(
 
     let (captree, captree_time) =
         stopwatch(|| AffordanceTree::<3, f32, u32>::new(points, rsq_range).unwrap());
+
+    let (f1, f1_time) = stopwatch(|| PkdForest::<3, 1>::new(points));
+    let (f2, f2_time) = stopwatch(|| PkdForest::<3, 2>::new(points));
+    let (f3, f3_time) = stopwatch(|| PkdForest::<3, 3>::new(points));
+    let (f4, f4_time) = stopwatch(|| PkdForest::<3, 4>::new(points));
+    let (f5, f5_time) = stopwatch(|| PkdForest::<3, 5>::new(points));
+    let (f6, f6_time) = stopwatch(|| PkdForest::<3, 6>::new(points));
+    let (f7, f7_time) = stopwatch(|| PkdForest::<3, 7>::new(points));
+    let (f8, f8_time) = stopwatch(|| PkdForest::<3, 8>::new(points));
+    let (f9, f9_time) = stopwatch(|| PkdForest::<3, 9>::new(points));
+    let (f10, f10_time) = stopwatch(|| PkdForest::<3, 10>::new(points));
+
     writeln!(
         f_construct,
-        "{},{},{},{}",
+        "{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
         points.len(),
         kdt_time.as_secs_f64(),
         pkdt_time.as_secs_f64(),
         captree_time.as_secs_f64(),
+        f1_time.as_secs_f64(),
+        f2_time.as_secs_f64(),
+        f3_time.as_secs_f64(),
+        f4_time.as_secs_f64(),
+        f5_time.as_secs_f64(),
+        f6_time.as_secs_f64(),
+        f7_time.as_secs_f64(),
+        f8_time.as_secs_f64(),
+        f9_time.as_secs_f64(),
+        f10_time.as_secs_f64(),
     )?;
 
     writeln!(
@@ -222,7 +246,7 @@ fn do_row(
         });
 
         let trace_len = trace.len() as f64;
-        writeln!(
+        write!(
             f_query,
             "{},{},{},{},{},{},{}",
             points.len(),
@@ -233,7 +257,38 @@ fn do_row(
             captree_total_seq_q_time.as_secs_f64() / trace_len,
             captree_total_simd_q_time.as_secs_f64() / trace_len,
         )?;
+
+        let forest_results = [
+            bench_forest(&f1, simd_trace),
+            bench_forest(&f2, simd_trace),
+            bench_forest(&f3, simd_trace),
+            bench_forest(&f4, simd_trace),
+            bench_forest(&f5, simd_trace),
+            bench_forest(&f6, simd_trace),
+            bench_forest(&f7, simd_trace),
+            bench_forest(&f8, simd_trace),
+            bench_forest(&f9, simd_trace),
+            bench_forest(&f10, simd_trace),
+        ];
+
+        for query_time in forest_results {
+            write!(f_query, ",{}", query_time.as_secs_f64() / trace_len)?;
+        }
+
+        writeln!(f_query)?;
     }
 
     Ok(())
+}
+
+fn bench_forest<const T: usize>(
+    forest: &PkdForest<3, T>,
+    simd_trace: &[([f32x8; 3], f32x8)],
+) -> Duration {
+    stopwatch(|| {
+        for (centers, radii) in simd_trace {
+            black_box(forest.might_collide_simd(centers, radii * radii));
+        }
+    })
+    .1
 }

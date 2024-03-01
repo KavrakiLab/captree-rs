@@ -12,29 +12,32 @@ import numpy as np
 import csv
 import matplotlib.pyplot as plt
 
-# I don't know what a dataframe is and I refuse to learn
+N_FORESTS = 10
 
 
 def plot_build_times(fname: str):
-    n_points = []
-    kdt_build_times = []
-    forward_times = []
-    captree_build_times = []
+    n_points = np.genfromtxt(fname, usecols=0, delimiter=",")
+    kdt_build_times = np.genfromtxt(fname, usecols=1, delimiter=",")
+    forward_times = np.genfromtxt(fname, usecols=2, delimiter=",")
+    captree_build_times = np.genfromtxt(fname, usecols=3, delimiter=",")
+    forest_build_times = np.genfromtxt(fname, usecols=range(4, 4 + N_FORESTS), delimiter=",")
 
-    with open(fname) as f:
-        reader = csv.reader(f, delimiter=",")
-        next(reader, None)
-        for row in reader:
-            n_points.append(int(row[0]))
-            kdt_build_times.append(float(row[1]))
-            forward_times.append(float(row[2]))
-            captree_build_times.append(float(row[3]))
+    plt.plot(n_points, kdt_build_times * 1e3, label="kiddo (k-d tree)")
+    plt.plot(n_points, forward_times * 1e3, label="forward tree")
 
-    plt.plot(n_points,
-             np.asarray(kdt_build_times) * 1e3,
-             label="kiddo (k-d tree)")
-    plt.plot(n_points, np.asarray(forward_times) * 1e3, label="forward tree")
-    plt.plot(n_points, np.asarray(captree_build_times) * 1e3, label="CAPT")
+    for (i, btime) in enumerate(forest_build_times.T):
+        plt.plot(n_points, btime * 1e3, label=f"forest (T={i + 1})")
+
+    plt.legend()
+    plt.xlabel("Number of points in cloud")
+    plt.ylabel("Construction time (ms)")
+    plt.title(f"Scaling of CC structure construction time")
+    plt.show()
+
+    plt.plot(n_points, captree_build_times * 1e3, label="CAPT")
+    plt.plot(n_points, kdt_build_times * 1e3, label="kiddo (k-d tree)")
+    plt.plot(n_points, forward_times * 1e3, label="forward tree")
+
     plt.legend()
     plt.xlabel("Number of points in cloud")
     plt.ylabel("Construction time (ms)")
@@ -42,41 +45,40 @@ def plot_build_times(fname: str):
     plt.show()
 
 
+
 def plot_query_times(fname: str, title: str):
     n_points = []
-    n_tests = []
-    captree_seq_times = []
-    captree_simd_times = []
-    kdt_times = []
-    forward_seq_times = []
-    forward_simd_times = []
+    n_points = np.genfromtxt(fname, usecols=0, delimiter=",")
+    n_tests = np.genfromtxt(fname, usecols=1, delimiter=",")
+    kdt_times = np.genfromtxt(fname, usecols=2, delimiter=",")
+    forward_seq_times = np.genfromtxt(fname, usecols=3, delimiter=",")
+    forward_simd_times = np.genfromtxt(fname, usecols=4, delimiter=",")
+    captree_seq_times = np.genfromtxt(fname, usecols=5, delimiter=",")
+    captree_simd_times = np.genfromtxt(fname, usecols=6, delimiter=",")
+    forest_times = np.genfromtxt(fname, usecols=range(7, 7 + N_FORESTS), delimiter=",")
 
-    with open(fname) as f:
-        reader = csv.reader(f, delimiter=",")
-        next(reader, None)
-        for row in reader:
-            n_points.append(int(row[0]))
-            n_tests.append(int(row[1]))
-            kdt_times.append(float(row[2]))
-            forward_seq_times.append(float(row[3]))
-            forward_simd_times.append(float(row[4]))
-            captree_seq_times.append(float(row[5]))
-            captree_simd_times.append(float(row[6]))
 
-    plt.plot(n_points, np.asarray(kdt_times) * 1e9, label="kiddo (k-d tree)")
-    plt.plot(n_points,
-             np.asarray(forward_seq_times) * 1e9,
-             label="forward tree (sequential)")
-    plt.plot(n_points,
-             np.asarray(forward_simd_times) * 1e9,
-             label="forward tree (SIMD)")
-    plt.plot(n_points,
-             np.asarray(captree_seq_times) * 1e9,
-             label="captree (sequential)")
-    plt.plot(n_points,
-             np.asarray(captree_simd_times) * 1e9,
-             label="captree (SIMD)")
-    plt.legend()
+    plt.plot(n_points, kdt_times * 1e9, label="kiddo (k-d tree)")
+    plt.plot(n_points, forward_simd_times * 1e9, label="forward tree (SIMD)")
+
+    plt.plot(n_points, forest_times[:, 0] * 1e9, label=f"forest (SIMD, T={1})")
+    plt.plot(n_points, forest_times[:, 4] * 1e9, label=f"forest (SIMD, T={5})")
+    plt.plot(n_points, forest_times[:, 9] * 1e9, label=f"forest (SIMD, T={10})")
+
+    plt.legend(loc="upper left")
+    plt.semilogy()
+    plt.xlabel("Number of points in cloud")
+    plt.ylabel("Query time (ns)")
+    plt.title(title)
+    plt.show()
+
+    plt.plot(n_points, kdt_times * 1e9, label="kiddo (k-d tree)")
+    plt.plot(n_points, forward_seq_times * 1e9, label="forward tree (sequential)")
+    plt.plot(n_points, forward_simd_times * 1e9, label="forward tree (SIMD)")
+    plt.plot(n_points, captree_seq_times * 1e9, label="captree (sequential)")
+    plt.plot(n_points, captree_simd_times * 1e9, label="captree (SIMD)")
+
+    plt.legend(loc="upper left")
     plt.semilogy()
     plt.xlabel("Number of points in cloud")
     plt.ylabel("Query time (ns)")

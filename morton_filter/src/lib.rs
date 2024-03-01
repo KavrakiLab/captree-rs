@@ -16,9 +16,15 @@ pub fn morton_filter(points: &mut Vec<[f32; 3]>, min_sep: f32) {
         [2, 0, 1],
         [2, 1, 0],
     ];
+    for permutation in PERMUTATIONS_3D {
+        filter_permutation(points, min_sep, permutation);
+    }
+}
 
+pub fn filter_permutation(points: &mut Vec<[f32; 3]>, min_sep: f32, perm: [u8; 3]) {
     let mut aabb_min = [f32::INFINITY; 3];
     let mut aabb_max = [f32::NEG_INFINITY; 3];
+    let rsq = min_sep * min_sep;
 
     for point in points.iter() {
         for k in 0..3 {
@@ -31,20 +37,17 @@ pub fn morton_filter(points: &mut Vec<[f32; 3]>, min_sep: f32) {
         }
     }
 
-    let rsq = min_sep * min_sep;
-    for permutation in PERMUTATIONS_3D {
-        points.sort_by_cached_key(|point| morton_index(point, &aabb_min, &aabb_max, permutation));
-        let mut i = 0;
-        let mut j = 1;
-        while j < points.len() {
-            if distsq(&points[i], &points[j]) > rsq {
-                i += 1;
-                points[i] = points[j];
-            }
-            j += 1;
+    points.sort_by_cached_key(|point| morton_index(point, &aabb_min, &aabb_max, perm));
+    let mut i = 0;
+    let mut j = 1;
+    while j < points.len() {
+        if distsq(&points[i], &points[j]) > rsq {
+            i += 1;
+            points[i] = points[j];
         }
-        points.truncate(i + 1);
+        j += 1;
     }
+    points.truncate(i + 1);
 }
 
 fn distsq(a: &[f32; 3], b: &[f32; 3]) -> f32 {
