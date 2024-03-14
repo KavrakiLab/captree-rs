@@ -70,8 +70,7 @@ impl<const K: usize, const T: usize> PkdForest<K, T> {
         for tree in &self.test_seqs {
             let indices = tree.mask_query(needles, not_yet_collided);
             let mut dists_sq = Simd::splat(0.0);
-            let mut ptrs = Simd::splat((tree.points.as_ref() as *const [[f32; K]]).cast::<f32>())
-                .wrapping_offset(indices);
+            let mut ptrs = Simd::splat(tree.points.as_ptr().cast()).wrapping_offset(indices);
             for needle_set in needles {
                 let diffs =
                     unsafe { Simd::gather_select_ptr(ptrs, not_yet_collided, Simd::splat(0.0)) }
@@ -172,8 +171,7 @@ impl<const K: usize> RandomizedTree<K> {
         for _ in 0..self.tests.len().trailing_ones() {
             let relevant_tests: Simd<f32, L> = unsafe {
                 Simd::gather_select_ptr(
-                    Simd::splat((self.tests.as_ref() as *const [f32]).cast())
-                        .wrapping_offset(test_idxs),
+                    Simd::splat(self.tests.as_ptr().cast()).wrapping_offset(test_idxs),
                     mask,
                     Simd::splat(f32::NAN),
                 )
@@ -194,7 +192,7 @@ impl<const K: usize> RandomizedTree<K> {
 
 #[inline]
 /// Compute the next value in the xorshift sequence given the most recent value.
-fn xorshift(mut x: u32) -> u32 {
+const fn xorshift(mut x: u32) -> u32 {
     x ^= x << 13;
     x ^= x >> 17;
     x ^= x << 5;

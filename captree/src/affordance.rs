@@ -2,7 +2,7 @@
 //! and SIMD batch parallelism.
 
 use crate::{forward_pass, median_partition, Axis, Distance, Index, SquaredEuclidean};
-use std::{marker::PhantomData, mem::size_of};
+use std::{array, marker::PhantomData, mem::size_of};
 
 #[cfg(feature = "simd")]
 use std::{
@@ -17,7 +17,7 @@ use std::{
 #[cfg(feature = "simd")]
 use crate::{forward_pass_simd, AxisSimd, IndexSimd};
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 #[allow(clippy::module_name_repetitions)]
 /// An affordance tree, which allows for efficient nearest-neighbor-within-a-radius queries.
 ///
@@ -55,7 +55,7 @@ pub struct AffordanceTree<const K: usize, A = f32, I = usize, D = SquaredEuclide
 }
 
 #[repr(C)]
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 /// A prismatic bounding volume.
 pub struct Aabb<A, const K: usize> {
     pub lo: [A; K],
@@ -94,7 +94,7 @@ where
         let mut points2 = vec![[A::INFINITY; K]; n2].into_boxed_slice();
         points2[..points.len()].copy_from_slice(points);
         // hack - reduce number of reallocations by allocating a lot of points from the start
-        let mut afforded = [(); K].map(|()| Vec::with_capacity(n2 * 1000));
+        let mut afforded = array::from_fn(|_| Vec::with_capacity(n2 * 1000));
         let mut starts = vec![I::ZERO; n2 + 1].into_boxed_slice();
 
         let mut aabbs = vec![
@@ -123,7 +123,7 @@ where
         )
         .ok()?;
 
-        Some(AffordanceTree {
+        Some(Self {
             tests,
             rsq_range: r_range,
             starts,
@@ -291,7 +291,7 @@ where
 
     #[must_use]
     /// Get the total memory used (stack + heap) by this structure, measured in bytes.
-    pub fn memory_used(&self) -> usize {
+    pub const fn memory_used(&self) -> usize {
         size_of::<Self>()
             + K * self.afforded[0].len() * size_of::<A>()
             + self.starts.len() * size_of::<I>()
@@ -403,13 +403,13 @@ impl<A, const K: usize> Aabb<A, K>
 where
     A: Axis,
 {
-    pub(crate) const ALL: Self = Aabb {
+    pub(crate) const ALL: Self = Self {
         lo: [A::NEG_INFINITY; K],
         hi: [A::INFINITY; K],
     };
 
     /// Split this volume by a test plane with value `test` along `dim`.
-    fn split(mut self, test: A, dim: usize) -> (Self, Self) {
+    const fn split(mut self, test: A, dim: usize) -> (Self, Self) {
         let mut rhs = self;
         self.hi[dim] = test;
         rhs.lo[dim] = test;

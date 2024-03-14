@@ -2,9 +2,10 @@
 
 #![cfg_attr(feature = "simd", feature(portable_simd))]
 #![warn(clippy::pedantic)]
+#![warn(clippy::nursery)]
 
 #[cfg(feature = "simd")]
-use std::simd::{prelude::*, LaneCount, Mask, Simd, SimdElement, SupportedLaneCount};
+use std::simd::{prelude::*, LaneCount, SimdElement, SupportedLaneCount};
 
 use std::{
     fmt::Debug,
@@ -247,7 +248,7 @@ impl<const K: usize> PkdTree<K> {
         new_points[..points.len()].copy_from_slice(points);
         build_tree(new_points.as_mut(), tests.as_mut(), 0, 0);
 
-        PkdTree {
+        Self {
             tests,
             points: new_points,
         }
@@ -278,7 +279,7 @@ impl<const K: usize> PkdTree<K> {
     {
         let indices = forward_pass_simd(&self.tests, needles);
         let mut dists_squared = Simd::splat(0.0);
-        let mut ptrs = Simd::splat((self.points.as_ref() as *const [[f32; K]]).cast::<f32>())
+        let mut ptrs = Simd::splat(self.points.as_ptr().cast())
             .wrapping_offset(indices * Simd::splat(K as isize));
         for needle_values in needles {
             let deltas = unsafe { Simd::gather_ptr(ptrs) } - needle_values;
@@ -370,13 +371,13 @@ impl<const K: usize> PkdTree<K> {
 
     #[must_use]
     #[allow(clippy::missing_panics_doc)]
-    pub fn get_point(&self, id: usize) -> [f32; K] {
+    pub const fn get_point(&self, id: usize) -> [f32; K] {
         self.points[id]
     }
 
     #[must_use]
     /// Return the total memory used (stack + heap) by this structure.
-    pub fn memory_used(&self) -> usize {
+    pub const fn memory_used(&self) -> usize {
         size_of::<Self>() + (self.points.len() * K + self.tests.len()) * size_of::<f32>()
     }
 }
@@ -531,16 +532,14 @@ mod tests {
     #[test]
     #[allow(clippy::float_cmp)]
     fn does_it_partition() {
-        let points = vec![[1.0], [2.0], [1.5], [2.1], [-0.5]];
-
-        let mut points1 = points.clone();
-        let median = median_partition(&mut points1, 0);
+        let mut points = vec![[1.0], [2.0], [1.5], [2.1], [-0.5]];
+        let median = median_partition(&mut points, 0);
         assert_eq!(median, 1.25);
-        for p0 in &points1[..points1.len() / 2] {
+        for p0 in &points[..points.len() / 2] {
             assert!(p0[0] <= median);
         }
 
-        for p0 in &points1[points1.len() / 2..] {
+        for p0 in &points[points.len() / 2..] {
             assert!(p0[0] >= median);
         }
     }

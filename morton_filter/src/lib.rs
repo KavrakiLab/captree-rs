@@ -4,8 +4,6 @@
 
 use std::ops::BitOr;
 
-use bitintr::Pdep;
-
 /// Filter out `points` such that points within `min_sep` of each other may be removed.
 pub fn morton_filter(points: &mut Vec<[f32; 3]>, min_sep: f32) {
     const PERMUTATIONS_3D: [[u8; 3]; 6] = [
@@ -72,11 +70,34 @@ fn morton_index(
         .into_iter()
         .enumerate()
         .map(|(i, k)| {
-            ((((point[k] - aabb_min[k]) / (aabb_max[k] - aabb_min[k])) * (1 << WIDTH) as f32)
-                as u32)
-                .pdep(MASK << i)
+            pdep(
+                (((point[k] - aabb_min[k]) / (aabb_max[k] - aabb_min[k])) * (1 << WIDTH) as f32)
+                    as u32,
+                MASK << i,
+            )
         })
         .fold(0, BitOr::bitor)
+}
+
+fn pdep(a: u32, mut mask: u32) -> u32 {
+    #[cfg(target_feature = "bmi2")]
+    {
+        unsafe {
+            return core::arch::x86_64::_pdep_u32(a, mask);
+        }
+    }
+    #[cfg(not(target_feature = "bmi2"))]
+    {
+        let mut out = 0;
+        for i in 0..mask.count_ones() {
+            let bit = mask & !(mask - 1);
+            if a & (1 << i) != 0 {
+                out |= bit;
+            }
+            mask ^= bit;
+        }
+        out
+    }
 }
 
 #[cfg(test)]
