@@ -8,10 +8,14 @@ use std::{
     time::{Duration, Instant},
 };
 
+use captree::Axis;
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 
 use rand_distr::{Distribution, Normal};
+
+pub mod forest;
+pub mod kdt;
 
 pub fn get_points(n_points_if_no_cloud: usize) -> Box<[[f32; 3]]> {
     let args: Vec<String> = env::args().collect();
@@ -211,4 +215,41 @@ pub fn fuzz_pointcloud(t: &mut [[f32; 3]], stddev: f32, rng: &mut impl Rng) {
     let normal = Normal::new(0.0, stddev).unwrap();
     t.iter_mut()
         .for_each(|p| p.iter_mut().for_each(|x| *x += normal.sample(rng)))
+}
+
+#[inline]
+/// Calculate the "true" median (halfway between two midpoints) and partition `points` about said
+/// median along axis `d`.
+fn median_partition<A: Axis, const K: usize>(points: &mut [[A; K]], k: usize) -> A {
+    let (lh, med_hi, _) =
+        points.select_nth_unstable_by(points.len() / 2, |a, b| a[k].partial_cmp(&b[k]).unwrap());
+    let med_lo = lh
+        .iter_mut()
+        .map(|p| p[k])
+        .max_by(|a, b| a.partial_cmp(b).unwrap())
+        .unwrap();
+    A::in_between(med_lo, med_hi[k])
+}
+
+#[inline]
+fn forward_pass<A: Axis, const K: usize>(tests: &[A], point: &[A; K]) -> usize {
+    // forward pass through the tree
+    let mut test_idx = 0;
+    let mut k = 0;
+    for _ in 0..tests.len().trailing_ones() {
+        test_idx =
+            2 * test_idx + 1 + usize::from(unsafe { *tests.get_unchecked(test_idx) } <= point[k]);
+        k = (k + 1) % K;
+    }
+
+    // retrieve affordance buffer location
+    test_idx - tests.len()
+}
+
+fn distsq<const K: usize>(a: [f32; K], b: [f32; K]) -> f32 {
+    let mut total = 0.0f32;
+    for i in 0..K {
+        total += (a[i] - b[i]).powi(2);
+    }
+    total
 }

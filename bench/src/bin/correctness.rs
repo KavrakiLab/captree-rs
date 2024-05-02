@@ -2,7 +2,7 @@
 
 use std::simd::Simd;
 
-use bench::{dist, parse_pointcloud_csv, parse_trace_csv, trace_rsq_range};
+use bench::{dist, kdt::PkdTree, parse_pointcloud_csv, parse_trace_csv, trace_rsq_range};
 use captree::AffordanceTree;
 use kiddo::SquaredEuclidean;
 use rand::{seq::SliceRandom, Rng};
@@ -50,7 +50,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let rsq_range = trace_rsq_range(&trace);
 
-    let kdt = captree::PkdTree::new(&points);
+    let kdt = PkdTree::new(&points);
     let mut kiddo_kdt = kiddo::KdTree::new();
     for pt in points.iter() {
         kiddo_kdt.add(pt, 0);

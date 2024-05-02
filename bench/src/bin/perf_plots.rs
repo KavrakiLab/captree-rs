@@ -9,11 +9,13 @@ use std::io::Write;
 use std::simd::f32x8;
 use std::time::Duration;
 
+use bench::forest::PkdForest;
+use bench::kdt::PkdTree;
 use bench::{
     fuzz_pointcloud, parse_pointcloud_csv, parse_trace_csv, simd_trace_new, stopwatch, SimdTrace,
     Trace,
 };
-use captree::{AffordanceTree, PkdForest, PkdTree};
+use captree::AffordanceTree;
 #[allow(unused_imports)]
 use kiddo::SquaredEuclidean;
 use morton_filter::morton_filter;

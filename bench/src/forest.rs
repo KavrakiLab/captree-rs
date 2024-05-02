@@ -4,6 +4,9 @@
 use std::simd::{
     cmp::SimdPartialOrd, ptr::SimdConstPtr, LaneCount, Mask, Simd, SupportedLaneCount,
 };
+use std::simd::{
+    cmp::SimdPartialOrd, ptr::SimdConstPtr, LaneCount, Mask, Simd, SupportedLaneCount,
+};
 
 use crate::{distsq, median_partition};
 
@@ -56,7 +59,6 @@ impl<const K: usize, const T: usize> PkdForest<K, T> {
     }
 
     #[must_use]
-    #[cfg(feature = "simd")]
     pub fn might_collide_simd<const L: usize>(
         &self,
         needles: &[Simd<f32, L>; K],
@@ -153,7 +155,6 @@ impl<const K: usize> RandomizedTree<K> {
     }
 
     #[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
-    #[cfg(feature = "simd")]
     /// Perform a masked SIMD query of this tree, only determining the location of the nearest
     /// neighbors for points in `mask`.
     fn mask_query<const L: usize>(

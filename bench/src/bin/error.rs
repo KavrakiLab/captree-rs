@@ -2,7 +2,7 @@
 
 use std::simd::{LaneCount, SupportedLaneCount};
 
-use bench::{dist, fuzz_pointcloud, get_points, make_needles};
+use bench::{dist, fuzz_pointcloud, get_points, kdt::PkdTree, make_needles};
 use kiddo::SquaredEuclidean;
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
@@ -25,11 +25,9 @@ pub fn measure_error<const D: usize, const L: usize>(
 ) where
     LaneCount<L>: SupportedLaneCount,
 {
-    let sp_clone = Box::from(points);
-
-    let kdt = captree::PkdTree::new(&sp_clone);
+    let kdt = PkdTree::new(points);
     let mut kiddo_kdt = kiddo::KdTree::new();
-    for pt in sp_clone.iter() {
+    for pt in points.iter() {
         kiddo_kdt.add(pt, 0);
     }
 
