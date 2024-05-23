@@ -13,7 +13,7 @@ const R_SQ: f32 = R * R;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut rng = rand::thread_rng();
-    let args = std::env::args().collect::<Box<_>>();
+    let args = std::env::args().collect::<Box<[String]>>();
     let points: Box<[[f32; 3]]> = if args.len() < 2 {
         (0..1 << 16)
             .map(|_| {

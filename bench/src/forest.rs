@@ -1,9 +1,5 @@
 //! Power-of-two k-d forests.
 
-#[cfg(feature = "simd")]
-use std::simd::{
-    cmp::SimdPartialOrd, ptr::SimdConstPtr, LaneCount, Mask, Simd, SupportedLaneCount,
-};
 use std::simd::{
     cmp::SimdPartialOrd, ptr::SimdConstPtr, LaneCount, Mask, Simd, SupportedLaneCount,
 };

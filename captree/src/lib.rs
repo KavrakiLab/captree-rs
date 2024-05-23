@@ -8,6 +8,7 @@
 use std::simd::{LaneCount, SimdElement, SupportedLaneCount};
 
 use std::{
+    cmp::max,
     fmt::Debug,
     mem::size_of,
     ops::{Add, Sub},
@@ -534,7 +535,7 @@ impl<A, I, const K: usize> AffordanceTree<K, A, I, SquaredEuclidean, A>
 where
     I: IndexSimd,
     SquaredEuclidean: Distance<A, K, Output = A>,
-    A: std::fmt::Debug,
+    A: Mul<Output = A>,
 {
     #[must_use]
     /// Determine whether any sphere in the list of provided spheres intersects a point in this
@@ -602,20 +603,43 @@ where
                 }
                 let rs = Simd::splat(radii[j]);
                 let rs_sq = rs * rs;
-                for i in (start..end).step_by(L) {
-                    let mut dists_sq = Simd::splat(SquaredEuclidean::ZERO);
-                    #[allow(clippy::needless_range_loop)]
+                if self.afforded[0].len() < end + L {
+                    // rare end case - we want a sequence of test points beyond the length of the buffer
+                    let mut center = [A::ZERO; K];
                     for k in 0..K {
-                        let vals = Simd::from_slice(&self.afforded[k][i..]);
-                        let diff = vals - centers[k];
-                        dists_sq += diff * diff;
+                        center[k] = centers[k][j];
                     }
-                    if A::any(dists_sq.simd_le(rs_sq)) {
-                        return true;
-                    }
-                }
+                    let rsq = radii[j] * radii[j];
+                    (start..end - L).step_by(L).any(|i| {
+                        let mut dists_sq = Simd::splat(SquaredEuclidean::ZERO);
+                        #[allow(clippy::needless_range_loop)]
+                        for k in 0..K {
+                            let vals = Simd::from_slice(&self.afforded[k][i..]);
+                            let diff = vals - centers[k];
+                            dists_sq += diff * diff;
+                        }
+                        A::any(dists_sq.simd_le(rs_sq))
+                    }) || (max(start, end - L)..end).any(|i| {
+                        let mut pt = [A::ZERO; K];
+                        #[allow(clippy::needless_range_loop)]
+                        for k in 0..K {
+                            pt[k] = self.afforded[k][i];
+                        }
 
-                false
+                        SquaredEuclidean::distance(&center, &pt) <= rsq
+                    })
+                } else {
+                    (start..end).step_by(L).any(|i| {
+                        let mut dists_sq = Simd::splat(SquaredEuclidean::ZERO);
+                        #[allow(clippy::needless_range_loop)]
+                        for k in 0..K {
+                            let vals = Simd::from_slice(&self.afforded[k][i..]);
+                            let diff = vals - centers[k];
+                            dists_sq += diff * diff;
+                        }
+                        A::any(dists_sq.simd_le(rs_sq))
+                    })
+                }
             })
     }
 }
