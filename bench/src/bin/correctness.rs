@@ -3,7 +3,7 @@
 use std::simd::Simd;
 
 use bench::{dist, kdt::PkdTree, parse_pointcloud_csv, parse_trace_csv, trace_rsq_range};
-use captree::AffordanceTree;
+use captree::Capt;
 use kiddo::SquaredEuclidean;
 use rand::{seq::SliceRandom, Rng};
 
@@ -56,7 +56,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         kiddo_kdt.add(pt, 0);
     }
 
-    let aff_tree = AffordanceTree::<3>::new(&points, rsq_range).unwrap();
+    let aff_tree = Capt::<3>::new(&points, rsq_range).unwrap();
 
     for (i, (center, r)) in trace.iter().enumerate() {
         println!("iter {i}: {:?}", (center, r));

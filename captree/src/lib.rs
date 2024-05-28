@@ -4,43 +4,77 @@
 #![warn(clippy::pedantic)]
 #![warn(clippy::nursery)]
 
-#[cfg(feature = "simd")]
-use std::simd::{LaneCount, SimdElement, SupportedLaneCount};
-
 use std::{
+    array,
     cmp::max,
     fmt::Debug,
+    marker::PhantomData,
     mem::size_of,
     ops::{Add, Sub},
 };
 
+#[cfg(feature = "simd")]
+use std::{
+    ops::{AddAssign, Mul},
+    simd::{
+        cmp::{SimdPartialEq, SimdPartialOrd},
+        ptr::SimdConstPtr,
+        LaneCount, Mask, Simd, SimdElement, SupportedLaneCount,
+    },
+};
+
+/// A generic trait representing values which may be used as an "axis;" that is, elements of a
+/// vector representing a point.
+///
+/// An array of `Axis` values is a point which can be stored in a [`Capt`].
+/// Accordingly, this trait specifies nearly all the requirements for points that [`Capt`]s require.
+/// The only exception is that [`Axis`] values really ought to be [`Ord`] instead of [`PartialOrd`];
+/// however, due to the disaster that is IEE 754 floating point numbers, `f32` and `f64` are not
+/// totally ordered. As a compromise, we relax the `Ord` requirement so that you can use floats in a
+/// `Capt`.
 pub trait Axis: PartialOrd + Copy + Sub<Output = Self> + Add<Output = Self> {
+    /// A value which is larger than any finite value.
     const INFINITY: Self;
+    /// A value which is smaller than any finite value.
     const NEG_INFINITY: Self;
-    const ZERO: Self;
-    const SIZE: usize;
 
     #[must_use]
+    /// Determine whether this value is finite or infinite.
     fn is_finite(self) -> bool;
 
     #[must_use]
-    fn abs(self) -> Self;
-
-    #[must_use]
+    /// Compute a value of `Self` which is halfway between `self` and `rhs`.
+    /// If there are no legal values between `self` and `rhs`, it is acceptable to return `self`
+    /// instead.
     fn in_between(self, rhs: Self) -> Self;
 }
 
 #[cfg(feature = "simd")]
+/// A trait used for masks over SIMD vectors, used for parallel querying on [`Capt`]s.
+///
+/// The interface for this trait should be considered unstable since the standard SIMD API may
+/// change with Rust versions.
 pub trait AxisSimd<M>: SimdElement + Default {
     #[must_use]
+    /// Determine whether any element of this mask is set to `true`.
     fn any(mask: M) -> bool;
 }
 
+/// An index type used for lookups into and out of arrays.
+///
+/// This is implemented so that [`Capt`]s can use smaller index sizes (such as [`u32`] or [`u16`])
+/// for improved memory performance.
 pub trait Index: TryFrom<usize> + TryInto<usize> + Copy {
+    /// The zero index. This must be equal to `(0usize).try_into().unwrap()`.
     const ZERO: Self;
 }
 
 #[cfg(feature = "simd")]
+/// A SIMD parallel version of [`Index`].
+///
+/// This is used for implementing SIMD lookups in a [`Capt`].
+/// The interface for this trait should be considered unstable since the standard SIMD API may
+/// change with Rust versions.
 pub trait IndexSimd: SimdElement + Default {
     #[must_use]
     /// Convert a SIMD array of `Self` to a SIMD array of `usize`, without checking that each
@@ -54,20 +88,38 @@ pub trait IndexSimd: SimdElement + Default {
         LaneCount<L>: SupportedLaneCount;
 }
 
+/// A distance metric.
+///
+/// This distance metric is used for determining nearest-neighbor candidates for a [`Capt`].
+/// For now, the only provided metric is [`SquaredEuclidean`].
 pub trait Distance<A, const K: usize> {
+    /// The value returned by distance computations.
+    /// In practice, this should be [`Ord`], but we cannot make that restriction and conveniently
+    /// use floats due to IEEE 754 floats not being totally ordered.
     type Output: PartialOrd + Copy;
+    /// The zero distance.
+    ///
+    /// If and only if two points have distance zero to one another, they are identical.
     const ZERO: Self::Output;
 
     #[must_use]
+    /// Compute the distance between two points.
     fn distance(x1: &[A; K], x2: &[A; K]) -> Self::Output;
 
     #[must_use]
-    fn closest_distance_to_volume(v: &Aabb<A, K>, x: &[A; K]) -> Self::Output;
+    /// Compute the minimum distance between a given point `x` and all points in the prismatic
+    /// volume `v`.
+    fn closest_distance_to_aabb(v: &Aabb<A, K>, x: &[A; K]) -> Self::Output;
 
     #[must_use]
+    /// Determine whether the ball with center `center` and radius `r` (defined as the set of all
+    /// points within distance `r` from `center`) contains all points in the volume of `aabb`.
     fn ball_contains_aabb(aabb: &Aabb<A, K>, center: &[A; K], r: Self::Output) -> bool;
 
     #[must_use]
+    /// Conservatively convert a radius to an L1 distance value; that is, the minimum radius `r'`
+    /// such that any two points further than `r'` apart by the L1 distance metric are also further
+    /// than `r` apart by this distance metric.
     fn as_l1(r: Self::Output) -> A;
 }
 
@@ -76,15 +128,8 @@ macro_rules! impl_axis {
         impl Axis for $t {
             const INFINITY: Self = <$t>::INFINITY;
             const NEG_INFINITY: Self = <$t>::NEG_INFINITY;
-            const ZERO: Self = 0.0;
-            const SIZE: usize = size_of::<Self>();
-
             fn is_finite(self) -> bool {
                 <$t>::is_finite(self)
-            }
-
-            fn abs(self) -> Self {
-                <$t>::abs(self)
             }
 
             fn in_between(self, rhs: Self) -> Self {
@@ -103,7 +148,7 @@ macro_rules! impl_axis {
                 }
                 total
             }
-            fn closest_distance_to_volume(v: &Aabb<$t, K>, x: &[$t; K]) -> Self::Output {
+            fn closest_distance_to_aabb(v: &Aabb<$t, K>, x: &[$t; K]) -> Self::Output {
                 let mut dist = 0.0;
 
                 for d in 0..K {
@@ -173,6 +218,13 @@ impl_idx!(u64);
 impl_idx!(usize);
 
 #[derive(Debug)]
+/// The distance metric for squared Euclidean distance.
+///
+/// For any two `k`-dimensional vectors `p` and `q`, the squared Euclidean distance is the sum from
+/// `i = 0` to `k - 1` of `(p[i] - k[i]) ** 2`.
+///
+/// This structure is intended for use as a generic parameter for a distance metric with a [`Capt`].
+/// For further detail, refer to the documentation for [`Distance`].
 pub struct SquaredEuclidean;
 
 /// Clamp a floating-point number.
@@ -227,51 +279,41 @@ where
 
     test_idxs - Simd::splat(tests.len() as isize)
 }
-use std::{array, marker::PhantomData};
-
-#[cfg(feature = "simd")]
-use std::{
-    ops::{AddAssign, Mul},
-    simd::{
-        cmp::{SimdPartialEq, SimdPartialOrd},
-        ptr::SimdConstPtr,
-        Mask, Simd,
-    },
-};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[allow(clippy::module_name_repetitions)]
-/// An affordance tree, which allows for efficient nearest-neighbor-within-a-radius queries.
+/// A collision-affording point tree (CAPT), which allows for efficient collision-checking in a
+/// SIMD-parallel manner between spheres and point clouds.
 ///
 /// # Generic parameters
 ///
 /// - `K`: The dimension of the space.
-/// - `A`: The value of the axes of each point.
-///        This should typically be `f32` or `f64`.
-/// - `I`: The index integer.
-///        This should generally be an unsigned integer, such as `usize` or `u32`.
+/// - `A`: The value of the axes of each point. This should typically be `f32` or `f64`.
+/// - `I`: The index integer. This should generally be an unsigned integer, such as `usize` or
+///   `u32`.
 /// - `D`: The distance metric.
-/// - `R`: The output value of the distance metric.
-///        This should typically be `f32` or `f64`.
-pub struct AffordanceTree<const K: usize, A = f32, I = usize, D = SquaredEuclidean, R = f32> {
+/// - `R`: The output value of the distance metric. This should typically be `f32` or `f64`.
+pub struct Capt<const K: usize, A = f32, I = usize, D = SquaredEuclidean, R = f32> {
     /// The test values for determining which part of the tree to enter.
     ///
     /// The first element of `tests` should be the first value to test against.
     /// If we are less than `tests[0]`, we move on to `tests[1]`; if not, we move on to `tests[2]`.
-    /// At the `i`-th test performed in sequence of the traversal, if we are less than `tests[idx]`,
-    /// we advance to `2 * idx + 1`; otherwise, we go to `2 * idx + 2`.
+    /// At the `i`-th test performed in sequence of the traversal, if we are less than
+    /// `tests[idx]`, we advance to `2 * idx + 1`; otherwise, we go to `2 * idx + 2`.
     ///
     /// The length of `tests` must be `N`, rounded up to the next power of 2, minus one.
     tests: Box<[A]>,
     /// The range of radii which are legal for queries on this tree.
     /// The first element is the minimum and the second element is the maximum.
     rsq_range: (R, R),
+    /// Axis-aligned bounding boxes containing the set of afforded points for each cell.
     aabbs: Box<[Aabb<A, K>]>,
     /// Indexes for the starts of the affordance buffer subsequence of `points` corresponding to
     /// each leaf cell in the tree.
     /// This buffer is padded with one extra `usize` at the end with the maximum length of `points`
     /// for the sake of branchless computation.
     starts: Box<[I]>,
+    /// The sets of afforded points for each cell.
     afforded: [Box<[A]>; K],
     _phantom: PhantomData<D>,
 }
@@ -284,7 +326,7 @@ pub struct Aabb<A, const K: usize> {
     pub hi: [A; K],
 }
 
-impl<A, I, D, R, const K: usize> AffordanceTree<K, A, I, D, R>
+impl<A, I, D, R, const K: usize> Capt<K, A, I, D, R>
 where
     A: Axis,
     I: Index,
@@ -321,8 +363,8 @@ where
 
         let mut aabbs = vec![
             Aabb {
-                lo: [A::ZERO; K],
-                hi: [A::ZERO; K],
+                lo: [A::NEG_INFINITY; K],
+                hi: [A::INFINITY; K],
             };
             n2
         ]
@@ -486,7 +528,7 @@ where
 
         let i = forward_pass(&self.tests, center);
         let aabb = unsafe { self.aabbs.get_unchecked(i) };
-        if D::closest_distance_to_volume(aabb, center) > radius {
+        if D::closest_distance_to_aabb(aabb, center) > radius {
             return false;
         }
 
@@ -531,7 +573,7 @@ where
 
 #[allow(clippy::mismatching_type_param_order)]
 #[cfg(feature = "simd")]
-impl<A, I, const K: usize> AffordanceTree<K, A, I, SquaredEuclidean, A>
+impl<A, I, const K: usize> Capt<K, A, I, SquaredEuclidean, A>
 where
     I: IndexSimd,
     SquaredEuclidean: Distance<A, K, Output = A>,
@@ -604,8 +646,9 @@ where
                 let rs = Simd::splat(radii[j]);
                 let rs_sq = rs * rs;
                 if self.afforded[0].len() < end + L {
-                    // rare end case - we want a sequence of test points beyond the length of the buffer
-                    let mut center = [A::ZERO; K];
+                    // rare end case - we want a sequence of test points beyond the length of the
+                    // buffer
+                    let mut center = [A::NEG_INFINITY; K];
                     for k in 0..K {
                         center[k] = centers[k][j];
                     }
@@ -620,7 +663,7 @@ where
                         }
                         A::any(dists_sq.simd_le(rs_sq))
                     }) || (max(start, end - L)..end).any(|i| {
-                        let mut pt = [A::ZERO; K];
+                        let mut pt = [A::NEG_INFINITY; K];
                         #[allow(clippy::needless_range_loop)]
                         for k in 0..K {
                             pt[k] = self.afforded[k][i];
@@ -663,7 +706,7 @@ where
     }
 
     fn affords<D: Distance<A, K>>(&self, pt: &[A; K], rsq_range: &(D::Output, D::Output)) -> bool {
-        D::closest_distance_to_volume(self, pt) <= rsq_range.1
+        D::closest_distance_to_aabb(self, pt) <= rsq_range.1
     }
 
     fn insert(&mut self, point: &[A; K]) {
@@ -705,14 +748,14 @@ mod tests {
     #[test]
     fn build_simple() {
         let points = [[0.0, 0.1], [0.4, -0.2], [-0.2, -0.1]];
-        let t = AffordanceTree::<2>::new(&points, (0.0, 0.04));
+        let t = Capt::<2>::new(&points, (0.0, 0.04));
         println!("{t:?}");
     }
 
     #[test]
     fn exact_query_single() {
         let points = [[0.0, 0.1], [0.4, -0.2], [-0.2, -0.1]];
-        let t = AffordanceTree::<2>::new(&points, (0.0, 0.2f32.powi(2))).unwrap();
+        let t = Capt::<2>::new(&points, (0.0, 0.2f32.powi(2))).unwrap();
 
         println!("{t:?}");
 
@@ -723,7 +766,7 @@ mod tests {
     #[test]
     fn another_one() {
         let points = [[0.0, 0.1], [0.4, -0.2], [-0.2, -0.1]];
-        let t = AffordanceTree::<2>::new(&points, (0.0, 0.04)).unwrap();
+        let t = Capt::<2>::new(&points, (0.0, 0.04)).unwrap();
 
         println!("{t:?}");
 
@@ -740,7 +783,7 @@ mod tests {
             [0.1, -1.1, 0.5],
         ];
 
-        let t = AffordanceTree::<3>::new(&points, (0.0, 0.04)).unwrap();
+        let t = Capt::<3>::new(&points, (0.0, 0.04)).unwrap();
 
         println!("{t:?}");
         assert!(t.collides(&[0.0, 0.1, 0.0], 0.011));
@@ -752,7 +795,7 @@ mod tests {
         const R_SQ: f32 = 0.0004;
         let points = [[0.0, 0.1], [0.4, -0.2], [-0.2, -0.1]];
         let mut rng = thread_rng();
-        let t = AffordanceTree::<2>::new(&points, (0.0, 0.0008)).unwrap();
+        let t = Capt::<2>::new(&points, (0.0, 0.0008)).unwrap();
 
         for _ in 0..10_000 {
             let p = [rng.gen_range(-1.0..1.0), rng.gen_range(-1.0..1.0)];
@@ -787,7 +830,7 @@ mod tests {
             [7.0, 7.0],
         ];
         let rsq_range = (R_SQ - f32::EPSILON, R_SQ + f32::EPSILON);
-        let t = AffordanceTree::<2>::new(&points, rsq_range).unwrap();
+        let t = Capt::<2>::new(&points, rsq_range).unwrap();
         println!("{t:?}");
 
         assert!(t.collides(&[-0.001, -0.2], 1.0));

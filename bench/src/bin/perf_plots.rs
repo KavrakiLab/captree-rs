@@ -1,28 +1,20 @@
 #![feature(portable_simd)]
 
-use std::cmp::min;
-use std::env::args;
-use std::error::Error;
-use std::fs::File;
-use std::hint::black_box;
-use std::io::Write;
-use std::simd::f32x8;
-use std::time::Duration;
-
-use bench::forest::PkdForest;
-use bench::kdt::PkdTree;
-use bench::{
-    fuzz_pointcloud, parse_pointcloud_csv, parse_trace_csv, simd_trace_new, stopwatch, SimdTrace,
-    Trace,
+use std::{
+    cmp::min, env::args, error::Error, fs::File, hint::black_box, io::Write, simd::f32x8,
+    time::Duration,
 };
-use captree::AffordanceTree;
+
+use bench::{
+    forest::PkdForest, fuzz_pointcloud, kdt::PkdTree, parse_pointcloud_csv, parse_trace_csv,
+    simd_trace_new, stopwatch, SimdTrace, Trace,
+};
+use captree::Capt;
 #[allow(unused_imports)]
 use kiddo::SquaredEuclidean;
 use morton_filter::morton_filter;
-use rand::seq::SliceRandom;
-use rand::Rng;
-use rand_chacha::rand_core::SeedableRng;
-use rand_chacha::ChaCha20Rng;
+use rand::{seq::SliceRandom, Rng};
+use rand_chacha::{rand_core::SeedableRng, ChaCha20Rng};
 
 const N_TRIALS: usize = 100_000;
 const L: usize = 8;
@@ -97,7 +89,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!("number of tests: {}", all_trace.len());
     println!("radius-squared range: {rsq_range:?}");
 
-    let captree = AffordanceTree::<3>::new(&points, rsq_range).unwrap();
+    let captree = Capt::<3>::new(&points, rsq_range).unwrap();
 
     let collide_trace: Box<Trace> = all_trace
         .iter()
@@ -165,7 +157,7 @@ fn do_row(
     let (pkdt, pkdt_time) = stopwatch(|| PkdTree::new(points));
 
     let (captree, captree_time) =
-        stopwatch(|| AffordanceTree::<3, f32, u32>::new(points, rsq_range).unwrap());
+        stopwatch(|| Capt::<3, f32, u32>::new(points, rsq_range).unwrap());
 
     let (f1, f1_time) = stopwatch(|| PkdForest::<3, 1>::new(points));
     let (f2, f2_time) = stopwatch(|| PkdForest::<3, 2>::new(points));

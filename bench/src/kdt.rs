@@ -24,8 +24,8 @@ pub struct PkdTree<const K: usize> {
     ///
     /// The first element of `tests` should be the first value to test against.
     /// If we are less than `tests[0]`, we move on to `tests[1]`; if not, we move on to `tests[2]`.
-    /// At the `i`-th test performed in sequence of the traversal, if we are less than `tests[idx]`,
-    /// we advance to `2 * idx + 1`; otherwise, we go to `2 * idx + 2`.
+    /// At the `i`-th test performed in sequence of the traversal, if we are less than
+    /// `tests[idx]`, we advance to `2 * idx + 1`; otherwise, we go to `2 * idx + 2`.
     ///
     /// The length of `tests` must be `N`, rounded up to the next power of 2, minus one.
     tests: Box<[f32]>,
@@ -139,7 +139,7 @@ impl<const K: usize> PkdTree<K> {
         best_id: &mut usize,
         best_distsq: &mut f32,
     ) {
-        if SquaredEuclidean::closest_distance_to_volume(bounding_box, &point) > *best_distsq {
+        if SquaredEuclidean::closest_distance_to_aabb(bounding_box, &point) > *best_distsq {
             return;
         }
 
