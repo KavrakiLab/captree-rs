@@ -10,11 +10,11 @@ use std::{
     marker::PhantomData,
     mem::size_of,
     ops::{Add, Sub},
+    ptr,
 };
 
 #[cfg(feature = "simd")]
 use std::{
-    cmp::max,
     ops::{AddAssign, Mul},
     simd::{
         cmp::{SimdPartialEq, SimdPartialOrd},
@@ -22,6 +22,8 @@ use std::{
         LaneCount, Mask, Simd, SimdElement, SupportedLaneCount,
     },
 };
+
+use elain::{Align, Alignment};
 
 /// A generic trait representing values which may be used as an "axis;" that is, elements of a
 /// vector representing a point.
@@ -371,6 +373,18 @@ where
     test_idxs - Simd::splat(tests.len() as isize)
 }
 
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// A stable-safe wrapper for `[A; L]` which is aligned to `L`.
+/// Equivalent to a `Simd`, but easier to work with.
+struct MySimd<A, const L: usize>
+where
+    Align<L>: Alignment,
+{
+    data: [A; L],
+    _align: Align<L>,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[allow(clippy::module_name_repetitions)]
 /// A collision-affording point tree (CAPT), which allows for efficient collision-checking in a
@@ -379,6 +393,9 @@ where
 /// # Generic parameters
 ///
 /// - `K`: The dimension of the space.
+/// - `L`: The lane size of this tree. Internally, this is the upper bound on the width of a SIMD
+///   lane that can be used in this data structure. The alignment of this structure must be a power
+///   of two.
 /// - `A`: The value of the axes of each point. This should typically be `f32` or `f64`. This should
 ///   implement [`Axis`].
 /// - `I`: The index integer. This should generally be an unsigned integer, such as `usize` or
@@ -400,7 +417,16 @@ where
 /// assert!(!t.collides(&[0.0, 0.3], 0.1 * 0.1));
 /// assert!(t.collides(&[0.0, 0.2], 0.15 * 0.15));
 /// ```
-pub struct Capt<const K: usize, A = f32, I = usize, D = SquaredEuclidean, R = f32> {
+pub struct Capt<
+    const K: usize,
+    const L: usize = 8,
+    A = f32,
+    I = usize,
+    D = SquaredEuclidean,
+    R = f32,
+> where
+    Align<L>: Alignment,
+{
     /// The test values for determining which part of the tree to enter.
     ///
     /// The first element of `tests` should be the first value to test against.
@@ -418,7 +444,7 @@ pub struct Capt<const K: usize, A = f32, I = usize, D = SquaredEuclidean, R = f3
     /// for the sake of branchless computation.
     starts: Box<[I]>,
     /// The sets of afforded points for each cell.
-    afforded: [Box<[A]>; K],
+    afforded: [Box<[MySimd<A, L>]>; K],
     _phantom: PhantomData<(D, R)>,
 }
 
@@ -435,12 +461,13 @@ pub struct Aabb<A, const K: usize> {
     pub hi: [A; K],
 }
 
-impl<A, I, D, R, const K: usize> Capt<K, A, I, D, R>
+impl<A, I, D, R, const K: usize, const L: usize> Capt<K, L, A, I, D, R>
 where
     A: Axis,
     I: Index,
     D: Distance<A, K, Output = R>,
     R: PartialOrd + Copy,
+    Align<L>: Alignment,
 {
     /// Construct a new CAPT containing all the points in `points`.
     ///
@@ -471,7 +498,7 @@ where
     /// let points = [[0.0]; 256];
     ///
     /// // note that we are using `u8` as our index type
-    /// let capt = captree::Capt::<1, f32, u8, captree::SquaredEuclidean, f32>::new(
+    /// let capt = captree::Capt::<1, 8, f32, u8, captree::SquaredEuclidean, f32>::new(
     ///     &points,
     ///     (0.0, f32::INFINITY),
     /// );
@@ -505,7 +532,7 @@ where
     /// let points = [[0.0]; 256];
     ///
     /// // note that we are using `u8` as our index type
-    /// let opt = captree::Capt::<1, f32, u8, captree::SquaredEuclidean, f32>::try_new(
+    /// let opt = captree::Capt::<1, 8, f32, u8, captree::SquaredEuclidean, f32>::try_new(
     ///     &points,
     ///     (0.0, f32::INFINITY),
     /// );
@@ -559,12 +586,12 @@ where
         })
     }
 
-    #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
     fn new_help(
         points: &mut [[A; K]],
         tests: &mut [A],
         aabbs: &mut [Aabb<A, K>],
-        afforded: &mut [Vec<A>; K],
+        afforded: &mut [Vec<MySimd<A, L>>; K],
         starts: &mut [I],
         k: usize,
         i: usize,
@@ -578,20 +605,52 @@ where
             let aabb = &mut aabbs[z];
             *aabb = Aabb { lo: rep, hi: rep };
             if rep[0].is_finite() {
+                // lanes for afforded points
+                let mut news = [[A::INFINITY; L]; K];
                 for k in 0..K {
-                    afforded[k].push(rep[k]);
+                    news[k][0] = rep[k];
                 }
 
+                // index into the current lane
+                let mut j = 1;
+
+                // populate affordance buffer if the representative doesn't cover everything
                 if !D::ball_contains_aabb(&cell, &rep, r_range.0) {
                     for ak in afforded.iter_mut() {
                         ak.reserve(ak.len() + in_range.len());
                     }
                     for p in in_range {
                         aabb.insert(&p);
-                        for k in 0..K {
-                            afforded[k].push(p[k]);
+
+                        // start a new lane if it's full
+                        if j == L {
+                            for k in 0..K {
+                                afforded[k].push(MySimd {
+                                    data: news[k],
+                                    _align: Align::NEW,
+                                });
+                            }
+                            j = 0;
                         }
+
+                        // add this point to the lane
+                        for k in 0..K {
+                            news[k][j] = p[k];
+                        }
+
+                        j += 1;
                     }
+                }
+
+                // fill out the last lane with infinities
+                for k in 0..K {
+                    for jj in j..L {
+                        news[k][jj] = A::INFINITY;
+                    }
+                    afforded[k].push(MySimd {
+                        data: news[k],
+                        _align: Align::NEW,
+                    });
                 }
             }
 
@@ -723,11 +782,13 @@ where
 
         // check affordance buffer
         range.any(|i| {
-            let mut aff_pt = [A::INFINITY; K];
-            for (ak, sk) in aff_pt.iter_mut().zip(&self.afforded) {
-                *ak = sk[i];
-            }
-            D::distance(&aff_pt, center) <= radius
+            (0..L).any(|j| {
+                let mut aff_pt = [A::INFINITY; K];
+                for (ak, sk) in aff_pt.iter_mut().zip(&self.afforded) {
+                    *ak = sk[i].data[j];
+                }
+                D::distance(&aff_pt, center) <= radius
+            })
         })
     }
 
@@ -755,11 +816,12 @@ where
 
 #[allow(clippy::mismatching_type_param_order)]
 #[cfg(feature = "simd")]
-impl<A, I, const K: usize> Capt<K, A, I, SquaredEuclidean, A>
+impl<A, I, const K: usize, const L: usize> Capt<K, L, A, I, SquaredEuclidean, A>
 where
     I: IndexSimd,
     SquaredEuclidean: Distance<A, K, Output = A>,
     A: Mul<Output = A>,
+    Align<L>: Alignment,
 {
     #[must_use]
     /// Determine whether any sphere in the list of provided spheres intersects a point in this
@@ -769,11 +831,7 @@ where
     ///
     /// This function may panic if `L` is greater than the alignment of the underlying allocations
     /// backing the structure.
-    pub fn collides_simd<const L: usize>(
-        &self,
-        centers: &[Simd<A, L>; K],
-        radii: Simd<A, L>,
-    ) -> bool
+    pub fn collides_simd(&self, centers: &[Simd<A, L>; K], radii: Simd<A, L>) -> bool
     where
         LaneCount<L>: SupportedLaneCount,
         Simd<A, L>:
@@ -827,44 +885,19 @@ where
                 }
                 let rs = Simd::splat(radii[j]);
                 let rs_sq = rs * rs;
-                if self.afforded[0].len() < end + L {
-                    // rare end case - we want a sequence of test points beyond the length of the
-                    // buffer
-                    let mut center = [A::NEG_INFINITY; K];
+                (start..end).any(|i| {
+                    let mut dists_sq = Simd::splat(SquaredEuclidean::ZERO);
+                    #[allow(clippy::needless_range_loop)]
                     for k in 0..K {
-                        center[k] = centers[k][j];
+                        let vals: Simd<A, L> = unsafe {
+                            *ptr::from_ref(&self.afforded.get_unchecked(k).get_unchecked(i).data)
+                                .cast()
+                        };
+                        let diff = vals - centers[k];
+                        dists_sq += diff * diff;
                     }
-                    let rsq = radii[j] * radii[j];
-                    (start..end - L).step_by(L).any(|i| {
-                        let mut dists_sq = Simd::splat(SquaredEuclidean::ZERO);
-                        #[allow(clippy::needless_range_loop)]
-                        for k in 0..K {
-                            let vals = Simd::from_slice(&self.afforded[k][i..]);
-                            let diff = vals - centers[k];
-                            dists_sq += diff * diff;
-                        }
-                        A::any(dists_sq.simd_le(rs_sq))
-                    }) || (max(start, end - L)..end).any(|i| {
-                        let mut pt = [A::NEG_INFINITY; K];
-                        #[allow(clippy::needless_range_loop)]
-                        for k in 0..K {
-                            pt[k] = self.afforded[k][i];
-                        }
-
-                        SquaredEuclidean::distance(&center, &pt) <= rsq
-                    })
-                } else {
-                    (start..end).step_by(L).any(|i| {
-                        let mut dists_sq = Simd::splat(SquaredEuclidean::ZERO);
-                        #[allow(clippy::needless_range_loop)]
-                        for k in 0..K {
-                            let vals = Simd::from_slice(&self.afforded[k][i..]);
-                            let diff = vals - centers[k];
-                            dists_sq += diff * diff;
-                        }
-                        A::any(dists_sq.simd_le(rs_sq))
-                    })
-                }
+                    A::any(dists_sq.simd_le(rs_sq))
+                })
             })
     }
 }
