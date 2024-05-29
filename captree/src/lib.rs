@@ -6,7 +6,6 @@
 
 use std::{
     array,
-    cmp::max,
     fmt::Debug,
     marker::PhantomData,
     mem::size_of,
@@ -15,6 +14,7 @@ use std::{
 
 #[cfg(feature = "simd")]
 use std::{
+    cmp::max,
     ops::{AddAssign, Mul},
     simd::{
         cmp::{SimdPartialEq, SimdPartialOrd},
@@ -32,6 +32,64 @@ use std::{
 /// however, due to the disaster that is IEE 754 floating point numbers, `f32` and `f64` are not
 /// totally ordered. As a compromise, we relax the `Ord` requirement so that you can use floats in a
 /// `Capt`.
+///
+/// # Examples
+///
+/// ```
+/// #[derive(Clone, Copy, PartialOrd, PartialEq)]
+/// enum HyperInt {
+///     MinusInf,
+///     Real(i32),
+///     PlusInf,
+/// }
+///
+/// impl std::ops::Add for HyperInt {
+/// // ...
+/// #    type Output = Self;
+/// #
+/// #    fn add(self, rhs: Self) -> Self {
+/// #        match (self, rhs) {
+/// #            (Self::MinusInf, Self::PlusInf) => Self::Real(0), // evil, but who cares?
+/// #            (Self::MinusInf, _) | (_, Self::MinusInf) => Self::MinusInf,
+/// #            (Self::PlusInf, _) | (_, Self::PlusInf) => Self::PlusInf,
+/// #            (Self::Real(x), Self::Real(y)) => Self::Real(x + y),
+/// #        }
+/// #    }
+/// }
+///
+///
+/// impl std::ops::Sub for HyperInt {
+/// // ...
+/// #    type Output = Self;
+/// #
+/// #    fn sub(self, rhs: Self) -> Self {
+/// #        match (self, rhs) {
+/// #            (Self::MinusInf, Self::MinusInf) | (Self::PlusInf, Self::PlusInf) => Self::Real(0), // evil, but who cares?
+/// #            (Self::MinusInf, _) | (_, Self::PlusInf) => Self::MinusInf,
+/// #            (Self::PlusInf, _) | (_, Self::MinusInf) => Self::PlusInf,
+/// #            (Self::Real(x), Self::Real(y)) => Self::Real(x - y),
+/// #        }
+/// #    }
+/// }
+///
+/// impl captree::Axis for HyperInt {
+///     const INFINITY: Self = Self::PlusInf;
+///     const NEG_INFINITY: Self = Self::MinusInf;
+///     
+///     fn is_finite(self) -> bool {
+///         matches!(self, Self::Real(_))
+///     }
+///     
+///     fn in_between(self, rhs: Self) -> Self {
+///         match (self, rhs) {
+///             (Self::PlusInf, Self::MinusInf) | (Self::MinusInf, Self::PlusInf) => Self::Real(0),
+///             (Self::MinusInf, _) | (_, Self::MinusInf) => Self::MinusInf,
+///             (Self::PlusInf, _) | (_, Self::PlusInf) => Self::PlusInf,
+///             (Self::Real(a), Self::Real(b)) => Self::Real(a + (b - a) / 2)
+///         }
+///     }
+/// }
+/// ```
 pub trait Axis: PartialOrd + Copy + Sub<Output = Self> + Add<Output = Self> {
     /// A value which is larger than any finite value.
     const INFINITY: Self;
@@ -92,6 +150,53 @@ pub trait IndexSimd: SimdElement + Default {
 ///
 /// This distance metric is used for determining nearest-neighbor candidates for a [`Capt`].
 /// For now, the only provided metric is [`SquaredEuclidean`].
+///
+/// # Examples
+///
+/// Below, a sample implementation of the taxicab (L1) distance metric.
+///
+/// ```
+/// use captree::{Aabb, Distance};
+///
+/// struct Taxicab;
+///
+/// impl<const K: usize> Distance<f32, K> for Taxicab {
+///     type Output = f32;
+///     const ZERO: f32 = 0.0;
+///
+///     fn distance(x1: &[f32; K], x2: &[f32; K]) -> f32 {
+///         x1.iter().zip(x2.iter()).map(|(&a, &b)| (a - b).abs()).sum()
+///     }
+///
+///     fn closest_distance_to_aabb(v: &Aabb<f32, K>, x: &[f32; K]) -> f32 {
+///         v.lo.iter()
+///             .zip(v.hi.iter())
+///             .zip(x.iter())
+///             .map(|((&l, &h), &a)| {
+///                 if l <= a && a <= h {
+///                     0.0
+///                 } else if a < l {
+///                     l - a
+///                 } else {
+///                     a - h
+///                 }
+///             })
+///             .sum()
+///     }
+///
+///     fn ball_contains_aabb(aabb: &Aabb<f32, K>, center: &[f32; K], r: f32) -> bool {
+///         aabb.lo
+///             .iter()
+///             .zip(aabb.hi.iter())
+///             .zip(center.iter())
+///             .all(|((&l, &h), &a)| a - r <= l && a + r >= h)
+///     }
+///
+///     fn as_l1(r: f32) -> f32 {
+///         r
+///     }
+/// }
+/// ```
 pub trait Distance<A, const K: usize> {
     /// The value returned by distance computations.
     /// In practice, this should be [`Ord`], but we cannot make that restriction and conveniently
@@ -237,20 +342,6 @@ fn clamp<A: PartialOrd>(x: A, min: A, max: A) -> A {
         x
     }
 }
-#[inline]
-fn forward_pass<A: Axis, const K: usize>(tests: &[A], point: &[A; K]) -> usize {
-    // forward pass through the tree
-    let mut test_idx = 0;
-    let mut k = 0;
-    for _ in 0..tests.len().trailing_ones() {
-        test_idx =
-            2 * test_idx + 1 + usize::from(unsafe { *tests.get_unchecked(test_idx) } <= point[k]);
-        k = (k + 1) % K;
-    }
-
-    // retrieve affordance buffer location
-    test_idx - tests.len()
-}
 
 #[inline]
 #[allow(clippy::cast_possible_wrap)]
@@ -291,8 +382,22 @@ where
 /// - `A`: The value of the axes of each point. This should typically be `f32` or `f64`.
 /// - `I`: The index integer. This should generally be an unsigned integer, such as `usize` or
 ///   `u32`.
-/// - `D`: The distance metric.
+/// - `D`: The distance metric. Note that the only distance metric implemented in this library is
+///   [`SquaredEuclidean`].
 /// - `R`: The output value of the distance metric. This should typically be `f32` or `f64`.
+///
+/// # Examples
+///
+/// ```
+/// // list of points in cloud
+/// let points = [[0.0, 0.1], [0.4, -0.2], [-0.2, -0.1]];
+///
+/// // query radii must be between 0.0 and 0.2
+/// let t = captree::Capt::<2>::new(&points, (0.0, 0.04));
+///
+/// assert!(!t.collides(&[0.0, 0.3], 0.1 * 0.1));
+/// assert!(t.collides(&[0.0, 0.2], 0.15 * 0.15));
+/// ```
 pub struct Capt<const K: usize, A = f32, I = usize, D = SquaredEuclidean, R = f32> {
     /// The test values for determining which part of the tree to enter.
     ///
@@ -303,9 +408,6 @@ pub struct Capt<const K: usize, A = f32, I = usize, D = SquaredEuclidean, R = f3
     ///
     /// The length of `tests` must be `N`, rounded up to the next power of 2, minus one.
     tests: Box<[A]>,
-    /// The range of radii which are legal for queries on this tree.
-    /// The first element is the minimum and the second element is the maximum.
-    rsq_range: (R, R),
     /// Axis-aligned bounding boxes containing the set of afforded points for each cell.
     aabbs: Box<[Aabb<A, K>]>,
     /// Indexes for the starts of the affordance buffer subsequence of `points` corresponding to
@@ -315,14 +417,19 @@ pub struct Capt<const K: usize, A = f32, I = usize, D = SquaredEuclidean, R = f3
     starts: Box<[I]>,
     /// The sets of afforded points for each cell.
     afforded: [Box<[A]>; K],
-    _phantom: PhantomData<D>,
+    _phantom: PhantomData<(D, R)>,
 }
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 /// A prismatic bounding volume.
+///
+/// This structure is mostly used internally, and isn't very useful for library consumers.
+/// It's only public so that downstream users can implement [`Distance`] on their own.
 pub struct Aabb<A, const K: usize> {
+    /// The lower bound on the volume.
     pub lo: [A; K],
+    /// The upper bound on the volume.
     pub hi: [A; K],
 }
 
@@ -333,23 +440,57 @@ where
     D: Distance<A, K, Output = R>,
     R: PartialOrd + Copy,
 {
-    #[must_use]
-    /// Construct a new affordance tree containing all the points in `points`.
+    /// Construct a new CAPT containing all the points in `points`.
+    ///
     /// `r_range` is a `(minimum, maximum)` pair containing the lower and upper bound on the
     /// radius of the balls which will be queried against the tree.
     /// `rng` is a random number generator.
-    /// Although the results of the tree are deterministic after construction, the construction
-    /// process for the tree is probabilistic.
-    /// The output of construction will be the same independent of the RNG, but the process to
-    /// construct the tree may vary with the provided RNG.
     ///
-    /// This function will return `None` if there are too many points to be indexed by `I`, or if
-    /// `K` is greater than `255`.
-    pub fn new(points: &[[A; K]], r_range: (R, R)) -> Option<Self> {
-        if K >= u8::MAX as usize {
-            return None;
-        }
-
+    /// # Panics
+    ///
+    /// This function will panic if there are too many points in the tree to be addressed by `I`.
+    /// This can even be the case if there are fewer points in `points` than can be addressed by `I`
+    /// as the CAPT may duplicate points for efficiency.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// let points = [[0.0]];
+    ///
+    /// let capt = captree::Capt::<1>::new(&points, (0.0, f32::INFINITY));
+    ///
+    /// assert!(capt.collides(&[1.0], 1.5));
+    /// assert!(!capt.collides(&[1.0], 0.5));
+    /// ```
+    ///
+    /// If there are too many points in `points`, this could cause a panic!
+    ///
+    /// ```rust,should_panic
+    /// let points = [[0.0]; 256];
+    ///
+    /// let capt = captree::Capt::<1, f32, u8, captree::SquaredEuclidean, f32>::new(
+    ///     &points,
+    ///     (0.0, f32::INFINITY),
+    /// );
+    /// ```
+    pub fn new(points: &[[A; K]], r_range: (R, R)) -> Self {
+        Self::try_new(points, r_range)
+            .expect("index type I must be able to support all points in CAPT during construction")
+    }
+    #[must_use]
+    /// Construct a new CAPT containing all the points in `points`, checking for index overflow.
+    ///
+    /// `r_range` is a `(minimum, maximum)` pair containing the lower and upper bound on the
+    /// radius of the balls which will be queried against the tree.
+    /// `rng` is a random number generator.
+    ///
+    /// This function will return `None` if there are too many points to be indexed by `I`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// ```
+    pub fn try_new(points: &[[A; K]], r_range: (R, R)) -> Option<Self> {
         let n2 = points.len().next_power_of_two();
 
         let mut tests = vec![A::INFINITY; n2 - 1].into_boxed_slice();
@@ -389,7 +530,6 @@ where
 
         Some(Self {
             tests,
-            rsq_range: r_range,
             starts,
             afforded: afforded.map(Vec::into_boxed_slice),
             aabbs,
@@ -513,48 +653,66 @@ where
     }
 
     #[must_use]
-    #[allow(clippy::needless_pass_by_value)]
     /// Determine whether a point in this tree is within a distance of `radius` to `center`.
     ///
-    /// # Panics
+    /// Note that this function will accept query radii outside of the range `r_range` passed to the
+    /// construction for this CAPT in [`Capt::new`] or [`Capt::try_new`]. However, if the query
+    /// radius is outside this range, the tree may erroneously return `false` (that is, erroneously
+    /// report non-collision).
     ///
-    /// This function will panic if `r_squared` is outside the range of radii passed to the
-    /// construction of the tree.
-    /// TODO: implement real error handling.
+    /// # Examples
+    ///
+    /// ```
+    /// let points = [[0.0; 3], [1.0; 3], [0.1, 0.5, 1.0]];
+    /// let capt = captree::Capt::<3>::new(&points, (0.0, 1.0));
+    ///
+    /// assert!(capt.collides(&[1.1; 3], 0.1));
+    /// assert!(!capt.collides(&[2.0; 3], 1.0));
+    ///
+    /// // no guarantees about what this is, since the radius is greater than the construction range
+    /// println!(
+    ///     "collision check result is {:?}",
+    ///     capt.collides(&[100.0; 3], 100.0)
+    /// );
+    /// ```
     pub fn collides(&self, center: &[A; K], radius: R) -> bool {
-        // ball mus be in the rsq range
-        debug_assert!(self.rsq_range.0 <= radius);
-        debug_assert!(radius <= self.rsq_range.1);
+        // forward pass through the tree
+        let mut test_idx = 0;
+        let mut k = 0;
+        for _ in 0..self.tests.len().trailing_ones() {
+            test_idx = 2 * test_idx
+                + 1
+                + usize::from(unsafe { *self.tests.get_unchecked(test_idx) } <= center[k]);
+            k = (k + 1) % K;
+        }
 
-        let i = forward_pass(&self.tests, center);
+        // retrieve affordance buffer location
+        let i = test_idx - self.tests.len();
         let aabb = unsafe { self.aabbs.get_unchecked(i) };
         if D::closest_distance_to_aabb(aabb, center) > radius {
             return false;
         }
 
-        let range = unsafe {
+        let mut range = unsafe {
             // SAFETY: The conversion worked the first way.
             self.starts[i].try_into().unwrap_unchecked()
                 ..self.starts[i + 1].try_into().unwrap_unchecked()
         };
 
         // check affordance buffer
-        for i in range {
+        range.any(|i| {
             let mut aff_pt = [A::INFINITY; K];
-            #[allow(clippy::needless_range_loop)]
             for (ak, sk) in aff_pt.iter_mut().zip(&self.afforded) {
                 *ak = sk[i];
             }
-            if D::distance(&aff_pt, center) <= radius {
-                return true;
-            }
-        }
-
-        false
+            D::distance(&aff_pt, center) <= radius
+        })
     }
 
     #[must_use]
+    #[doc(hidden)]
     /// Get the total memory used (stack + heap) by this structure, measured in bytes.
+    /// This function should not be considered stable; it is only used internally for benchmarks.
     pub const fn memory_used(&self) -> usize {
         size_of::<Self>()
             + K * self.afforded[0].len() * size_of::<A>()
@@ -564,8 +722,10 @@ where
     }
 
     #[must_use]
+    #[doc(hidden)]
     #[allow(clippy::cast_precision_loss)]
     /// Get the average number of affordances per point.
+    /// This function should not be considered stable; it is only used internally for benchmarks.
     pub fn affordance_size(&self) -> f64 {
         self.afforded.len() as f64 / (self.tests.len() + 1) as f64
     }
@@ -755,7 +915,7 @@ mod tests {
     #[test]
     fn exact_query_single() {
         let points = [[0.0, 0.1], [0.4, -0.2], [-0.2, -0.1]];
-        let t = Capt::<2>::new(&points, (0.0, 0.2f32.powi(2))).unwrap();
+        let t = Capt::<2>::new(&points, (0.0, 0.2f32.powi(2)));
 
         println!("{t:?}");
 
@@ -766,7 +926,7 @@ mod tests {
     #[test]
     fn another_one() {
         let points = [[0.0, 0.1], [0.4, -0.2], [-0.2, -0.1]];
-        let t = Capt::<2>::new(&points, (0.0, 0.04)).unwrap();
+        let t = Capt::<2>::new(&points, (0.0, 0.04));
 
         println!("{t:?}");
 
@@ -783,7 +943,7 @@ mod tests {
             [0.1, -1.1, 0.5],
         ];
 
-        let t = Capt::<3>::new(&points, (0.0, 0.04)).unwrap();
+        let t = Capt::<3>::new(&points, (0.0, 0.04));
 
         println!("{t:?}");
         assert!(t.collides(&[0.0, 0.1, 0.0], 0.011));
@@ -795,7 +955,7 @@ mod tests {
         const R_SQ: f32 = 0.0004;
         let points = [[0.0, 0.1], [0.4, -0.2], [-0.2, -0.1]];
         let mut rng = thread_rng();
-        let t = Capt::<2>::new(&points, (0.0, 0.0008)).unwrap();
+        let t = Capt::<2>::new(&points, (0.0, 0.0008));
 
         for _ in 0..10_000 {
             let p = [rng.gen_range(-1.0..1.0), rng.gen_range(-1.0..1.0)];
@@ -830,7 +990,7 @@ mod tests {
             [7.0, 7.0],
         ];
         let rsq_range = (R_SQ - f32::EPSILON, R_SQ + f32::EPSILON);
-        let t = Capt::<2>::new(&points, rsq_range).unwrap();
+        let t = Capt::<2>::new(&points, rsq_range);
         println!("{t:?}");
 
         assert!(t.collides(&[-0.001, -0.2], 1.0));

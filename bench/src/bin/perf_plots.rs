@@ -89,7 +89,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!("number of tests: {}", all_trace.len());
     println!("radius-squared range: {rsq_range:?}");
 
-    let captree = Capt::<3>::new(&points, rsq_range).unwrap();
+    let captree = Capt::<3>::new(&points, rsq_range);
 
     let collide_trace: Box<Trace> = all_trace
         .iter()
@@ -156,8 +156,7 @@ fn do_row(
 
     let (pkdt, pkdt_time) = stopwatch(|| PkdTree::new(points));
 
-    let (captree, captree_time) =
-        stopwatch(|| Capt::<3, f32, u32>::new(points, rsq_range).unwrap());
+    let (captree, captree_time) = stopwatch(|| Capt::<3, f32, u32>::new(points, rsq_range));
 
     let (f1, f1_time) = stopwatch(|| PkdForest::<3, 1>::new(points));
     let (f2, f2_time) = stopwatch(|| PkdForest::<3, 2>::new(points));
