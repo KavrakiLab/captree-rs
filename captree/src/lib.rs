@@ -379,12 +379,14 @@ where
 /// # Generic parameters
 ///
 /// - `K`: The dimension of the space.
-/// - `A`: The value of the axes of each point. This should typically be `f32` or `f64`.
+/// - `A`: The value of the axes of each point. This should typically be `f32` or `f64`. This should
+///   implement [`Axis`].
 /// - `I`: The index integer. This should generally be an unsigned integer, such as `usize` or
-///   `u32`.
+///   `u32`. This should implement [`Index`].
 /// - `D`: The distance metric. Note that the only distance metric implemented in this library is
-///   [`SquaredEuclidean`].
-/// - `R`: The output value of the distance metric. This should typically be `f32` or `f64`.
+///   [`SquaredEuclidean`]. This should implement [`Distance`].
+/// - `R`: The output value of the distance metric. This should typically be `f32` or `f64`. This
+///   should be the value of `<D as Distance>::Output`.
 ///
 /// # Examples
 ///
@@ -468,6 +470,7 @@ where
     /// ```rust,should_panic
     /// let points = [[0.0]; 256];
     ///
+    /// // note that we are using `u8` as our index type
     /// let capt = captree::Capt::<1, f32, u8, captree::SquaredEuclidean, f32>::new(
     ///     &points,
     ///     (0.0, f32::INFINITY),
@@ -488,7 +491,26 @@ where
     ///
     /// # Examples
     ///
+    /// Unwrapping the output from this function is equivalent to calling [`Capt::new`].
+    ///
     /// ```
+    /// let points = [[0.0]];
+    ///
+    /// let capt = captree::Capt::<1>::try_new(&points, (0.0, f32::INFINITY)).unwrap();
+    /// ```
+    ///
+    /// In failure, we get a `None`.
+    ///
+    /// ```
+    /// let points = [[0.0]; 256];
+    ///
+    /// // note that we are using `u8` as our index type
+    /// let opt = captree::Capt::<1, f32, u8, captree::SquaredEuclidean, f32>::try_new(
+    ///     &points,
+    ///     (0.0, f32::INFINITY),
+    /// );
+    ///
+    /// assert!(opt.is_none());
     /// ```
     pub fn try_new(points: &[[A; K]], r_range: (R, R)) -> Option<Self> {
         let n2 = points.len().next_power_of_two();
@@ -851,7 +873,7 @@ impl<A, const K: usize> Aabb<A, K>
 where
     A: Axis,
 {
-    pub(crate) const ALL: Self = Self {
+    const ALL: Self = Self {
         lo: [A::NEG_INFINITY; K],
         hi: [A::INFINITY; K],
     };
