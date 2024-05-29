@@ -2,17 +2,16 @@
 
 use std::simd::Simd;
 
-use bench::{dist, kdt::PkdTree, parse_pointcloud_csv, parse_trace_csv, trace_rsq_range};
+use bench::{dist, kdt::PkdTree, parse_pointcloud_csv, parse_trace_csv, trace_r_range};
 use captree::Capt;
 use kiddo::SquaredEuclidean;
-use rand::{seq::SliceRandom, Rng};
+use rand::{seq::SliceRandom, Rng, SeedableRng};
 
 const N: usize = 1 << 12;
 const R: f32 = 0.02;
-const R_SQ: f32 = R * R;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand_chacha::ChaCha20Rng::seed_from_u64(2707);
     let args = std::env::args().collect::<Box<[String]>>();
     let points: Box<[[f32; 3]]> = if args.len() < 2 {
         (0..1 << 16)
@@ -40,7 +39,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         rng.gen_range(0.0..1.0),
                         rng.gen_range(0.0..1.0),
                     ],
-                    rng.gen_range(0.0..=0.08),
+                    rng.gen_range(0.0..=R),
                 )
             })
             .collect()
@@ -48,7 +47,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         parse_trace_csv(&args[2])?
     };
 
-    let rsq_range = trace_rsq_range(&trace);
+    let r_range = trace_r_range(&trace);
 
     let kdt = PkdTree::new(&points);
     let mut kiddo_kdt = kiddo::KdTree::new();
@@ -56,10 +55,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         kiddo_kdt.add(pt, 0);
     }
 
-    let aff_tree = Capt::<3>::new(&points, rsq_range);
+    let aff_tree = Capt::<3>::new(&points, r_range);
 
     for (i, (center, r)) in trace.iter().enumerate() {
-        println!("iter {i}: {:?}", (center, r));
         let exact_kiddo_dist = kiddo_kdt
             .nearest_one::<SquaredEuclidean>(center)
             .distance
@@ -72,12 +70,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Simd::splat(center[1]),
             Simd::splat(center[2]),
         ];
-        if exact_dist <= R {
-            assert!(aff_tree.collides(center, R_SQ));
-            assert!(aff_tree.collides_simd(&simd_center, Simd::splat(R)))
+        if exact_dist <= *r {
+            println!("iter {i}: {:?} (collides)", (center, r));
+            assert!(aff_tree.collides(center, *r));
+            assert!(aff_tree.collides_simd(&simd_center, Simd::splat(*r)))
         } else {
-            assert!(!aff_tree.collides(center, R_SQ));
-            assert!(!aff_tree.collides_simd(&simd_center, Simd::splat(R)))
+            println!("iter {i}: {:?} (no collides)", (center, r));
+            assert!(!aff_tree.collides(center, *r));
+            assert!(!aff_tree.collides_simd(&simd_center, Simd::splat(*r)))
         }
     }
 

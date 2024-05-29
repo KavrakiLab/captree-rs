@@ -7,15 +7,14 @@
 use std::{
     array,
     fmt::Debug,
-    marker::PhantomData,
     mem::size_of,
     ops::{Add, Sub},
-    ptr,
 };
 
 #[cfg(feature = "simd")]
 use std::{
     ops::{AddAssign, Mul},
+    ptr,
     simd::{
         cmp::{SimdPartialEq, SimdPartialOrd},
         ptr::SimdConstPtr,
@@ -75,6 +74,7 @@ use elain::{Align, Alignment};
 /// }
 ///
 /// impl captree::Axis for HyperInt {
+///     const ZERO: Self = Self::Real(0);
 ///     const INFINITY: Self = Self::PlusInf;
 ///     const NEG_INFINITY: Self = Self::MinusInf;
 ///     
@@ -90,9 +90,18 @@ use elain::{Align, Alignment};
 ///             (Self::Real(a), Self::Real(b)) => Self::Real(a + (b - a) / 2)
 ///         }
 ///     }
+///
+///     fn square(self) -> Self {
+///         match self {
+///             Self::PlusInf | Self::MinusInf => Self::PlusInf,
+///             Self::Real(a) => Self::Real(a * a),
+///         }
+///     }
 /// }
 /// ```
 pub trait Axis: PartialOrd + Copy + Sub<Output = Self> + Add<Output = Self> {
+    /// A zero value.
+    const ZERO: Self;
     /// A value which is larger than any finite value.
     const INFINITY: Self;
     /// A value which is smaller than any finite value.
@@ -107,6 +116,10 @@ pub trait Axis: PartialOrd + Copy + Sub<Output = Self> + Add<Output = Self> {
     /// If there are no legal values between `self` and `rhs`, it is acceptable to return `self`
     /// instead.
     fn in_between(self, rhs: Self) -> Self;
+
+    #[must_use]
+    /// Compute the square of this value.
+    fn square(self) -> Self;
 }
 
 #[cfg(feature = "simd")]
@@ -148,91 +161,10 @@ pub trait IndexSimd: SimdElement + Default {
         LaneCount<L>: SupportedLaneCount;
 }
 
-/// A distance metric.
-///
-/// This distance metric is used for determining nearest-neighbor candidates for a [`Capt`].
-/// For now, the only provided metric is [`SquaredEuclidean`].
-///
-/// # Examples
-///
-/// Below, a sample implementation of the taxicab (L1) distance metric.
-///
-/// ```
-/// use captree::{Aabb, Distance};
-///
-/// struct Taxicab;
-///
-/// impl<const K: usize> Distance<f32, K> for Taxicab {
-///     type Output = f32;
-///     const ZERO: f32 = 0.0;
-///
-///     fn distance(x1: &[f32; K], x2: &[f32; K]) -> f32 {
-///         x1.iter().zip(x2.iter()).map(|(&a, &b)| (a - b).abs()).sum()
-///     }
-///
-///     fn closest_distance_to_aabb(v: &Aabb<f32, K>, x: &[f32; K]) -> f32 {
-///         v.lo.iter()
-///             .zip(v.hi.iter())
-///             .zip(x.iter())
-///             .map(|((&l, &h), &a)| {
-///                 if l <= a && a <= h {
-///                     0.0
-///                 } else if a < l {
-///                     l - a
-///                 } else {
-///                     a - h
-///                 }
-///             })
-///             .sum()
-///     }
-///
-///     fn ball_contains_aabb(aabb: &Aabb<f32, K>, center: &[f32; K], r: f32) -> bool {
-///         aabb.lo
-///             .iter()
-///             .zip(aabb.hi.iter())
-///             .zip(center.iter())
-///             .all(|((&l, &h), &a)| a - r <= l && a + r >= h)
-///     }
-///
-///     fn as_l1(r: f32) -> f32 {
-///         r
-///     }
-/// }
-/// ```
-pub trait Distance<A, const K: usize> {
-    /// The value returned by distance computations.
-    /// In practice, this should be [`Ord`], but we cannot make that restriction and conveniently
-    /// use floats due to IEEE 754 floats not being totally ordered.
-    type Output: PartialOrd + Copy;
-    /// The zero distance.
-    ///
-    /// If and only if two points have distance zero to one another, they are identical.
-    const ZERO: Self::Output;
-
-    #[must_use]
-    /// Compute the distance between two points.
-    fn distance(x1: &[A; K], x2: &[A; K]) -> Self::Output;
-
-    #[must_use]
-    /// Compute the minimum distance between a given point `x` and all points in the prismatic
-    /// volume `v`.
-    fn closest_distance_to_aabb(v: &Aabb<A, K>, x: &[A; K]) -> Self::Output;
-
-    #[must_use]
-    /// Determine whether the ball with center `center` and radius `r` (defined as the set of all
-    /// points within distance `r` from `center`) contains all points in the volume of `aabb`.
-    fn ball_contains_aabb(aabb: &Aabb<A, K>, center: &[A; K], r: Self::Output) -> bool;
-
-    #[must_use]
-    /// Conservatively convert a radius to an L1 distance value; that is, the minimum radius `r'`
-    /// such that any two points further than `r'` apart by the L1 distance metric are also further
-    /// than `r` apart by this distance metric.
-    fn as_l1(r: Self::Output) -> A;
-}
-
 macro_rules! impl_axis {
     ($t: ty, $tm: ty) => {
         impl Axis for $t {
+            const ZERO: Self = 0.0;
             const INFINITY: Self = <$t>::INFINITY;
             const NEG_INFINITY: Self = <$t>::NEG_INFINITY;
             fn is_finite(self) -> bool {
@@ -242,45 +174,9 @@ macro_rules! impl_axis {
             fn in_between(self, rhs: Self) -> Self {
                 (self + rhs) / 2.0
             }
-        }
 
-        impl<const K: usize> Distance<$t, K> for SquaredEuclidean {
-            type Output = $t;
-            const ZERO: Self::Output = 0.0;
-
-            fn distance(x1: &[$t; K], x2: &[$t; K]) -> Self::Output {
-                let mut total = 0.0;
-                for i in 0..K {
-                    total += (x1[i] - x2[i]).powi(2);
-                }
-                total
-            }
-            fn closest_distance_to_aabb(v: &Aabb<$t, K>, x: &[$t; K]) -> Self::Output {
-                let mut dist = 0.0;
-
-                for d in 0..K {
-                    let clamped = clamp(x[d], v.lo[d], v.hi[d]);
-                    dist += (x[d] - clamped).powi(2);
-                }
-
-                dist
-            }
-
-            fn ball_contains_aabb(aabb: &Aabb<$t, K>, x: &[$t; K], r: Self::Output) -> bool {
-                let mut dist = 0.0;
-
-                for k in 0..K {
-                    let lo_diff = (aabb.lo[k] - x[k]).powi(2);
-                    let hi_diff = (aabb.hi[k] - x[k]).powi(2);
-
-                    dist += if lo_diff < hi_diff { hi_diff } else { lo_diff };
-                }
-
-                dist <= r
-            }
-
-            fn as_l1(r: $t) -> $t {
-                r.sqrt()
+            fn square(self) -> Self {
+                self * self
             }
         }
 
@@ -412,19 +308,13 @@ where
 /// let points = [[0.0, 0.1], [0.4, -0.2], [-0.2, -0.1]];
 ///
 /// // query radii must be between 0.0 and 0.2
-/// let t = captree::Capt::<2>::new(&points, (0.0, 0.04));
+/// let t = captree::Capt::<2>::new(&points, (0.0, 0.2));
 ///
-/// assert!(!t.collides(&[0.0, 0.3], 0.1 * 0.1));
-/// assert!(t.collides(&[0.0, 0.2], 0.15 * 0.15));
+/// assert!(!t.collides(&[0.0, 0.3], 0.1));
+/// assert!(t.collides(&[0.0, 0.2], 0.15));
 /// ```
-pub struct Capt<
-    const K: usize,
-    const L: usize = 8,
-    A = f32,
-    I = usize,
-    D = SquaredEuclidean,
-    R = f32,
-> where
+pub struct Capt<const K: usize, const L: usize = 8, A = f32, I = usize>
+where
     Align<L>: Alignment,
 {
     /// The test values for determining which part of the tree to enter.
@@ -445,15 +335,12 @@ pub struct Capt<
     starts: Box<[I]>,
     /// The sets of afforded points for each cell.
     afforded: [Box<[MySimd<A, L>]>; K],
-    _phantom: PhantomData<(D, R)>,
 }
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[doc(hidden)]
 /// A prismatic bounding volume.
-///
-/// This structure is mostly used internally, and isn't very useful for library consumers.
-/// It's only public so that downstream users can implement [`Distance`] on their own.
 pub struct Aabb<A, const K: usize> {
     /// The lower bound on the volume.
     pub lo: [A; K],
@@ -461,19 +348,16 @@ pub struct Aabb<A, const K: usize> {
     pub hi: [A; K],
 }
 
-impl<A, I, D, R, const K: usize, const L: usize> Capt<K, L, A, I, D, R>
+impl<A, I, const K: usize, const L: usize> Capt<K, L, A, I>
 where
     A: Axis,
     I: Index,
-    D: Distance<A, K, Output = R>,
-    R: PartialOrd + Copy,
     Align<L>: Alignment,
 {
     /// Construct a new CAPT containing all the points in `points`.
     ///
     /// `r_range` is a `(minimum, maximum)` pair containing the lower and upper bound on the
     /// radius of the balls which will be queried against the tree.
-    /// `rng` is a random number generator.
     ///
     /// # Panics
     ///
@@ -498,12 +382,9 @@ where
     /// let points = [[0.0]; 256];
     ///
     /// // note that we are using `u8` as our index type
-    /// let capt = captree::Capt::<1, 8, f32, u8, captree::SquaredEuclidean, f32>::new(
-    ///     &points,
-    ///     (0.0, f32::INFINITY),
-    /// );
+    /// let capt = captree::Capt::<1, 8, f32, u8>::new(&points, (0.0, f32::INFINITY));
     /// ```
-    pub fn new(points: &[[A; K]], r_range: (R, R)) -> Self {
+    pub fn new(points: &[[A; K]], r_range: (A, A)) -> Self {
         Self::try_new(points, r_range)
             .expect("index type I must be able to support all points in CAPT during construction")
     }
@@ -532,14 +413,11 @@ where
     /// let points = [[0.0]; 256];
     ///
     /// // note that we are using `u8` as our index type
-    /// let opt = captree::Capt::<1, 8, f32, u8, captree::SquaredEuclidean, f32>::try_new(
-    ///     &points,
-    ///     (0.0, f32::INFINITY),
-    /// );
+    /// let opt = captree::Capt::<1, 8, f32, u8>::try_new(&points, (0.0, f32::INFINITY));
     ///
     /// assert!(opt.is_none());
     /// ```
-    pub fn try_new(points: &[[A; K]], r_range: (R, R)) -> Option<Self> {
+    pub fn try_new(points: &[[A; K]], r_range: (A, A)) -> Option<Self> {
         let n2 = points.len().next_power_of_two();
 
         let mut tests = vec![A::INFINITY; n2 - 1].into_boxed_slice();
@@ -548,7 +426,7 @@ where
         let mut points2 = vec![[A::INFINITY; K]; n2].into_boxed_slice();
         points2[..points.len()].copy_from_slice(points);
         // hack - reduce number of reallocations by allocating a lot of points from the start
-        let mut afforded = array::from_fn(|_| Vec::with_capacity(n2 * 1000));
+        let mut afforded = array::from_fn(|_| Vec::with_capacity(n2 * 100));
         let mut starts = vec![I::ZERO; n2 + 1].into_boxed_slice();
 
         let mut aabbs = vec![
@@ -560,8 +438,6 @@ where
         ]
         .into_boxed_slice();
 
-        let r_max_l1 = D::as_l1(r_range.1);
-
         Self::new_help(
             &mut points2,
             &mut tests,
@@ -571,7 +447,6 @@ where
             0,
             0,
             r_range,
-            r_max_l1,
             Vec::new(),
             Aabb::ALL,
         )
@@ -582,7 +457,6 @@ where
             starts,
             afforded: afforded.map(Vec::into_boxed_slice),
             aabbs,
-            _phantom: PhantomData,
         })
     }
 
@@ -595,11 +469,12 @@ where
         starts: &mut [I],
         k: usize,
         i: usize,
-        r_range: (R, R),
-        r_max_l1: A,
+        r_range: (A, A),
         in_range: Vec<[A; K]>,
         cell: Aabb<A, K>,
     ) -> Result<(), ()> {
+        let rsq_min = r_range.0.square();
+        let rsq_max = r_range.1.square();
         if let [rep] = *points {
             let z = i - tests.len();
             let aabb = &mut aabbs[z];
@@ -615,9 +490,9 @@ where
                 let mut j = 1;
 
                 // populate affordance buffer if the representative doesn't cover everything
-                if !D::ball_contains_aabb(&cell, &rep, r_range.0) {
+                if !cell.contained_by_ball(&rep, rsq_min) {
                     for ak in afforded.iter_mut() {
-                        ak.reserve(ak.len() + in_range.len());
+                        ak.reserve(ak.len() + in_range.len() / L);
                     }
                     for p in in_range {
                         aabb.insert(&p);
@@ -644,9 +519,6 @@ where
 
                 // fill out the last lane with infinities
                 for k in 0..K {
-                    for jj in j..L {
-                        news[k][jj] = A::INFINITY;
-                    }
                     afforded[k].push(MySimd {
                         data: news[k],
                         _align: Align::NEW,
@@ -664,37 +536,37 @@ where
         let (lhs, rhs) = points.split_at_mut(points.len() / 2);
         let (lo_vol, hi_vol) = cell.split(test, k);
 
-        let lo_too_small = D::distance(&lo_vol.lo, &lo_vol.hi) <= r_range.0;
-        let hi_too_small = D::distance(&hi_vol.lo, &hi_vol.hi) <= r_range.0;
+        let lo_too_small = distsq(lo_vol.lo, lo_vol.hi) <= rsq_min;
+        let hi_too_small = distsq(hi_vol.lo, hi_vol.hi) <= rsq_min;
 
         // retain only points which might be in the affordance buffer for the split-out cells
         let (lo_afford, hi_afford) = match (lo_too_small, hi_too_small) {
             (false, false) => {
                 let mut lo_afford = in_range;
                 let mut hi_afford = lo_afford.clone();
-                lo_afford.retain(|pt| lo_vol.affords::<D>(pt, &r_range));
-                lo_afford.extend(rhs.iter().filter(|pt| pt[k] <= test + r_max_l1));
-                hi_afford.retain(|pt| hi_vol.affords::<D>(pt, &r_range));
+                lo_afford.retain(|pt| lo_vol.affords(pt, rsq_max));
+                lo_afford.extend(rhs.iter().filter(|pt| pt[k] <= test + r_range.1));
+                hi_afford.retain(|pt| hi_vol.affords(pt, rsq_max));
                 hi_afford.extend(
                     lhs.iter()
-                        .filter(|pt| pt[k].is_finite() && test - r_max_l1 <= pt[k]),
+                        .filter(|pt| pt[k].is_finite() && test - r_range.1 <= pt[k]),
                 );
 
                 (lo_afford, hi_afford)
             }
             (false, true) => {
                 let mut lo_afford = in_range;
-                lo_afford.retain(|pt| lo_vol.affords::<D>(pt, &r_range));
-                lo_afford.extend(rhs.iter().filter(|pt| pt[k] <= test + r_max_l1));
+                lo_afford.retain(|pt| lo_vol.affords(pt, rsq_max));
+                lo_afford.extend(rhs.iter().filter(|pt| pt[k] <= test + r_range.1));
 
                 (lo_afford, Vec::new())
             }
             (true, false) => {
                 let mut hi_afford = in_range;
-                hi_afford.retain(|pt| hi_vol.affords::<D>(pt, &r_range));
+                hi_afford.retain(|pt| hi_vol.affords(pt, rsq_max));
                 hi_afford.extend(
                     lhs.iter()
-                        .filter(|pt| pt[k].is_finite() && test - r_max_l1 <= pt[k]),
+                        .filter(|pt| pt[k].is_finite() && test - r_range.1 <= pt[k]),
                 );
 
                 (Vec::new(), hi_afford)
@@ -712,7 +584,6 @@ where
             next_k,
             2 * i + 1,
             r_range,
-            r_max_l1,
             lo_afford,
             lo_vol,
         )?;
@@ -725,7 +596,6 @@ where
             next_k,
             2 * i + 2,
             r_range,
-            r_max_l1,
             hi_afford,
             hi_vol,
         )?;
@@ -747,7 +617,7 @@ where
     /// let points = [[0.0; 3], [1.0; 3], [0.1, 0.5, 1.0]];
     /// let capt = captree::Capt::<3>::new(&points, (0.0, 1.0));
     ///
-    /// assert!(capt.collides(&[1.1; 3], 0.1));
+    /// assert!(capt.collides(&[1.1; 3], 0.2));
     /// assert!(!capt.collides(&[2.0; 3], 1.0));
     ///
     /// // no guarantees about what this is, since the radius is greater than the construction range
@@ -756,7 +626,7 @@ where
     ///     capt.collides(&[100.0; 3], 100.0)
     /// );
     /// ```
-    pub fn collides(&self, center: &[A; K], radius: R) -> bool {
+    pub fn collides(&self, center: &[A; K], radius: A) -> bool {
         // forward pass through the tree
         let mut test_idx = 0;
         let mut k = 0;
@@ -768,9 +638,10 @@ where
         }
 
         // retrieve affordance buffer location
+        let rsq = radius.square();
         let i = test_idx - self.tests.len();
         let aabb = unsafe { self.aabbs.get_unchecked(i) };
-        if D::closest_distance_to_aabb(aabb, center) > radius {
+        if aabb.closest_distsq_to(center) > rsq {
             return false;
         }
 
@@ -787,7 +658,7 @@ where
                 for (ak, sk) in aff_pt.iter_mut().zip(&self.afforded) {
                     *ak = sk[i].data[j];
                 }
-                D::distance(&aff_pt, center) <= radius
+                distsq(aff_pt, *center) <= rsq
             })
         })
     }
@@ -816,10 +687,9 @@ where
 
 #[allow(clippy::mismatching_type_param_order)]
 #[cfg(feature = "simd")]
-impl<A, I, const K: usize, const L: usize> Capt<K, L, A, I, SquaredEuclidean, A>
+impl<A, I, const K: usize, const L: usize> Capt<K, L, A, I>
 where
     I: IndexSimd,
-    SquaredEuclidean: Distance<A, K, Output = A>,
     A: Mul<Output = A>,
     Align<L>: Alignment,
 {
@@ -879,19 +749,18 @@ where
             .filter_map(|(r, i)| i.then_some(r))
             .enumerate()
             .any(|(j, (start, end))| {
-                let mut n_center = [Simd::splat(SquaredEuclidean::ZERO); K];
+                let mut n_center = [Simd::splat(A::ZERO); K];
                 for k in 0..K {
                     n_center[k] = Simd::splat(centers[k][j]);
                 }
                 let rs = Simd::splat(radii[j]);
                 let rs_sq = rs * rs;
                 (start..end).any(|i| {
-                    let mut dists_sq = Simd::splat(SquaredEuclidean::ZERO);
+                    let mut dists_sq = Simd::splat(A::ZERO);
                     #[allow(clippy::needless_range_loop)]
                     for k in 0..K {
                         let vals: Simd<A, L> = unsafe {
-                            *ptr::from_ref(&self.afforded.get_unchecked(k).get_unchecked(i).data)
-                                .cast()
+                            *ptr::from_ref(&self.afforded[k].get_unchecked(i).data).cast()
                         };
                         let diff = vals - centers[k];
                         dists_sq += diff * diff;
@@ -900,6 +769,14 @@ where
                 })
             })
     }
+}
+
+fn distsq<A: Axis, const K: usize>(a: [A; K], b: [A; K]) -> A {
+    let mut total = A::ZERO;
+    for i in 0..K {
+        total = total + (a[i] - b[i]).square();
+    }
+    total
 }
 
 impl<A, const K: usize> Aabb<A, K>
@@ -920,8 +797,35 @@ where
         (self, rhs)
     }
 
-    fn affords<D: Distance<A, K>>(&self, pt: &[A; K], rsq_range: &(D::Output, D::Output)) -> bool {
-        D::closest_distance_to_aabb(self, pt) <= rsq_range.1
+    fn contained_by_ball(&self, center: &[A; K], rsq: A) -> bool {
+        let mut dist = A::ZERO;
+
+        #[allow(clippy::needless_range_loop)]
+        for k in 0..K {
+            let lo_diff = (self.lo[k] - center[k]).square();
+            let hi_diff = (self.hi[k] - center[k]).square();
+
+            dist = dist + if lo_diff < hi_diff { hi_diff } else { lo_diff };
+        }
+
+        dist <= rsq
+    }
+
+    fn affords(&self, pt: &[A; K], rsq_min: A) -> bool {
+        self.closest_distsq_to(pt) <= rsq_min
+    }
+
+    #[doc(hidden)]
+    pub fn closest_distsq_to(&self, pt: &[A; K]) -> A {
+        let mut dist = A::ZERO;
+
+        #[allow(clippy::needless_range_loop)]
+        for d in 0..K {
+            let clamped = clamp(pt[d], self.lo[d], self.hi[d]);
+            dist = dist + (pt[d] - clamped).square();
+        }
+
+        dist
     }
 
     fn insert(&mut self, point: &[A; K]) {
@@ -963,30 +867,30 @@ mod tests {
     #[test]
     fn build_simple() {
         let points = [[0.0, 0.1], [0.4, -0.2], [-0.2, -0.1]];
-        let t = Capt::<2>::new(&points, (0.0, 0.04));
+        let t = Capt::<2>::new(&points, (0.0, 0.2));
         println!("{t:?}");
     }
 
     #[test]
     fn exact_query_single() {
         let points = [[0.0, 0.1], [0.4, -0.2], [-0.2, -0.1]];
-        let t = Capt::<2>::new(&points, (0.0, 0.2f32.powi(2)));
+        let t = Capt::<2>::new(&points, (0.0, 0.2));
 
         println!("{t:?}");
 
         let q0 = [0.0, -0.01];
-        assert!(t.collides(&q0, (0.12f32).powi(2)));
+        assert!(t.collides(&q0, 0.12));
     }
 
     #[test]
     fn another_one() {
         let points = [[0.0, 0.1], [0.4, -0.2], [-0.2, -0.1]];
-        let t = Capt::<2>::new(&points, (0.0, 0.04));
+        let t = Capt::<2>::new(&points, (0.0, 0.2));
 
         println!("{t:?}");
 
         let q0 = [0.003_265_380_9, 0.106_527_805];
-        assert!(t.collides(&q0, 0.0004));
+        assert!(t.collides(&q0, 0.02));
     }
 
     #[test]
@@ -998,27 +902,25 @@ mod tests {
             [0.1, -1.1, 0.5],
         ];
 
-        let t = Capt::<3>::new(&points, (0.0, 0.04));
+        let t = Capt::<3>::new(&points, (0.0, 0.2));
 
         println!("{t:?}");
-        assert!(t.collides(&[0.0, 0.1, 0.0], 0.011));
-        assert!(!t.collides(&[0.0, 0.1, 0.0], 0.05 * 0.05));
+        assert!(t.collides(&[0.0, 0.1, 0.0], 0.11));
+        assert!(!t.collides(&[0.0, 0.1, 0.0], 0.05));
     }
 
     #[test]
     fn fuzz() {
-        const R_SQ: f32 = 0.0004;
+        const R: f32 = 0.04;
         let points = [[0.0, 0.1], [0.4, -0.2], [-0.2, -0.1]];
         let mut rng = thread_rng();
-        let t = Capt::<2>::new(&points, (0.0, 0.0008));
+        let t = Capt::<2>::new(&points, (0.0, R));
 
         for _ in 0..10_000 {
             let p = [rng.gen_range(-1.0..1.0), rng.gen_range(-1.0..1.0)];
-            let collides = points
-                .iter()
-                .any(|a| SquaredEuclidean::distance(a, &p) < R_SQ);
+            let collides = points.iter().any(|a| distsq(*a, p) <= R * R);
             println!("{p:?}; {collides}");
-            assert_eq!(collides, t.collides(&p, R_SQ));
+            assert_eq!(collides, t.collides(&p, R));
         }
     }
 

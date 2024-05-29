@@ -196,18 +196,16 @@ where
         .collect()
 }
 
-pub fn trace_rsq_range(t: &Trace) -> (f32, f32) {
+pub fn trace_r_range(t: &Trace) -> (f32, f32) {
     (
         t.iter()
             .map(|x| x.1)
             .min_by(|a, b| a.partial_cmp(b).unwrap())
-            .unwrap_or(0.0)
-            .powi(2),
+            .unwrap_or(0.0),
         t.iter()
             .map(|x| x.1)
             .max_by(|a, b| a.partial_cmp(b).unwrap())
-            .unwrap_or(0.0)
-            .powi(2),
+            .unwrap_or(f32::INFINITY),
     )
 }
 

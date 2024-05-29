@@ -3,7 +3,7 @@ use std::{
     simd::{Simd, SupportedLaneCount},
 };
 
-use captree::{Aabb, Axis, AxisSimd, Distance, SquaredEuclidean};
+use captree::{Aabb, Axis, AxisSimd};
 
 use std::simd::{
     cmp::{SimdPartialEq, SimdPartialOrd},
@@ -139,7 +139,7 @@ impl<const K: usize> PkdTree<K> {
         best_id: &mut usize,
         best_distsq: &mut f32,
     ) {
-        if SquaredEuclidean::closest_distance_to_aabb(bounding_box, &point) > *best_distsq {
+        if bounding_box.closest_distsq_to(&point) > *best_distsq {
             return;
         }
 

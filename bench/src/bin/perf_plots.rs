@@ -83,13 +83,13 @@ fn main() -> Result<(), Box<dyn Error>> {
     //         .ok_or("no points")?
     //         .powi(2),
     // );
-    let rsq_range = (0.01 * 0.01, 0.08 * 0.08);
+    let r_range = (0.01, 0.08);
 
     println!("number of points: {}", points.len());
     println!("number of tests: {}", all_trace.len());
-    println!("radius-squared range: {rsq_range:?}");
+    println!("radius range: {r_range:?}");
 
-    let captree = Capt::<3>::new(&points, rsq_range);
+    let captree = Capt::<3>::new(&points, r_range);
 
     let collide_trace: Box<Trace> = all_trace
         .iter()
@@ -132,7 +132,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         do_row(
             &new_points,
             &mut benchmarks,
-            rsq_range,
+            r_range,
             &mut f_construct,
             &mut f_mem,
         )?;
@@ -148,7 +148,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 fn do_row(
     points: &[[f32; 3]],
     benchmarks: &mut [Benchmark],
-    rsq_range: (f32, f32),
+    r_range: (f32, f32),
     f_construct: &mut File,
     f_mem: &mut File,
 ) -> Result<(), Box<dyn Error>> {
@@ -156,7 +156,7 @@ fn do_row(
 
     let (pkdt, pkdt_time) = stopwatch(|| PkdTree::new(points));
 
-    let (captree, captree_time) = stopwatch(|| Capt::<3, L, f32, u32>::new(points, rsq_range));
+    let (captree, captree_time) = stopwatch(|| Capt::<3, L, f32, u32>::new(points, r_range));
 
     let (f1, f1_time) = stopwatch(|| PkdForest::<3, 1>::new(points));
     let (f2, f2_time) = stopwatch(|| PkdForest::<3, 2>::new(points));
