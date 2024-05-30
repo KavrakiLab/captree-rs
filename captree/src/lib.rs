@@ -409,7 +409,7 @@ where
     /// let capt = captree::Capt::<1>::try_new(&points, (0.0, f32::INFINITY)).unwrap();
     /// ```
     ///
-    /// In failure, we get a `None`.
+    /// In failure, we get an `Err`.
     ///
     /// ```
     /// let points = [[0.0]; 256];
@@ -710,10 +710,26 @@ where
     /// Determine whether any sphere in the list of provided spheres intersects a point in this
     /// tree.
     ///
-    /// # Panics
+    /// # Examples
     ///
-    /// This function may panic if `L` is greater than the alignment of the underlying allocations
-    /// backing the structure.
+    /// ```
+    /// #![feature(portable_simd)]
+    /// use std::simd::Simd;
+    ///
+    /// let points = [[1.0, 2.0], [1.1, 1.1]];
+    ///
+    /// let centers = [
+    ///     Simd::from_array([1.0, 1.1, 1.2, 1.3]), // x-positions
+    ///     Simd::from_array([1.0, 1.1, 1.2, 1.3]), // y-positions
+    /// ];
+    /// let radii = Simd::splat(0.05);
+    ///
+    /// let tree = captree::Capt::<2, 4, f32, u32>::new(&points, (0.0, 0.1));
+    ///
+    /// println!("{tree:?}");
+    ///
+    /// assert!(tree.collides_simd(&centers, radii));
+    /// ```
     pub fn collides_simd(&self, centers: &[Simd<A, L>; K], radii: Simd<A, L>) -> bool
     where
         LaneCount<L>: SupportedLaneCount,
@@ -730,16 +746,18 @@ where
 
         unsafe {
             for center in centers {
-                inbounds &=
-                    Simd::gather_select_ptr(aabb_ptrs, inbounds, Simd::splat(A::NEG_INFINITY))
-                        - radii
-                        <= *center;
+                inbounds &= Mask::<isize, L>::from(
+                    (Simd::gather_select_ptr(aabb_ptrs, inbounds, Simd::splat(A::NEG_INFINITY))
+                        - radii)
+                        .simd_le(*center),
+                );
                 aabb_ptrs = aabb_ptrs.wrapping_add(Simd::splat(1));
             }
             for center in centers {
-                inbounds &=
+                inbounds &= Mask::<isize, L>::from(
                     Simd::gather_select_ptr(aabb_ptrs, inbounds, Simd::splat(A::NEG_INFINITY))
-                        >= *center - radii;
+                        .simd_ge(*center - radii),
+                );
                 aabb_ptrs = aabb_ptrs.wrapping_add(Simd::splat(1));
             }
         }
@@ -759,8 +777,8 @@ where
             .into_iter()
             .zip(ends)
             .zip(inbounds.to_array())
-            .filter_map(|(r, i)| i.then_some(r))
             .enumerate()
+            .filter_map(|(j, r)| r.1.then_some((j, r.0)))
             .any(|(j, (start, end))| {
                 let mut n_center = [Simd::splat(A::ZERO); K];
                 for k in 0..K {
@@ -775,7 +793,7 @@ where
                         let vals: Simd<A, L> = unsafe {
                             *ptr::from_ref(&self.afforded[k].get_unchecked(i).data).cast()
                         };
-                        let diff = vals - centers[k];
+                        let diff = vals - n_center[k];
                         dists_sq += diff * diff;
                     }
                     A::any(dists_sq.simd_le(rs_sq))
