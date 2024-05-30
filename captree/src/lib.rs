@@ -220,16 +220,6 @@ impl_idx!(u32);
 impl_idx!(u64);
 impl_idx!(usize);
 
-#[derive(Debug)]
-/// The distance metric for squared Euclidean distance.
-///
-/// For any two `k`-dimensional vectors `p` and `q`, the squared Euclidean distance is the sum from
-/// `i = 0` to `k - 1` of `(p[i] - k[i]) ** 2`.
-///
-/// This structure is intended for use as a generic parameter for a distance metric with a [`Capt`].
-/// For further detail, refer to the documentation for [`Distance`].
-pub struct SquaredEuclidean;
-
 /// Clamp a floating-point number.
 fn clamp<A: PartialOrd>(x: A, min: A, max: A) -> A {
     if x < min {
@@ -296,10 +286,6 @@ where
 ///   implement [`Axis`].
 /// - `I`: The index integer. This should generally be an unsigned integer, such as `usize` or
 ///   `u32`. This should implement [`Index`].
-/// - `D`: The distance metric. Note that the only distance metric implemented in this library is
-///   [`SquaredEuclidean`]. This should implement [`Distance`].
-/// - `R`: The output value of the distance metric. This should typically be `f32` or `f64`. This
-///   should be the value of `<D as Distance>::Output`.
 ///
 /// # Examples
 ///
