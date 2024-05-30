@@ -348,6 +348,17 @@ pub struct Aabb<A, const K: usize> {
     pub hi: [A; K],
 }
 
+#[non_exhaustive]
+#[derive(Clone, Debug, PartialEq, Eq)]
+/// The errors which can occur when calling [`Capt::try_new`].
+pub enum NewCaptError {
+    /// There were too many points in the provided cloud to be represented without integer
+    /// overflow.
+    TooManyPoints,
+    /// At least one of the points had a non-finite value.
+    NonFinite,
+}
+
 impl<A, I, const K: usize, const L: usize> Capt<K, L, A, I>
 where
     A: Axis,
@@ -361,9 +372,10 @@ where
     ///
     /// # Panics
     ///
-    /// This function will panic if there are too many points in the tree to be addressed by `I`.
-    /// This can even be the case if there are fewer points in `points` than can be addressed by `I`
-    /// as the CAPT may duplicate points for efficiency.
+    /// This function will panic if there are too many points in the tree to be addressed by `I`, or
+    /// if any points contain non-finite non-real value. This can even be the case if there are
+    /// fewer points in `points` than can be addressed by `I` as the CAPT may duplicate points
+    /// for efficiency.
     ///
     /// # Examples
     ///
@@ -388,14 +400,18 @@ where
         Self::try_new(points, r_range)
             .expect("index type I must be able to support all points in CAPT during construction")
     }
-    #[must_use]
+
     /// Construct a new CAPT containing all the points in `points`, checking for index overflow.
     ///
     /// `r_range` is a `(minimum, maximum)` pair containing the lower and upper bound on the
     /// radius of the balls which will be queried against the tree.
     /// `rng` is a random number generator.
     ///
-    /// This function will return `None` if there are too many points to be indexed by `I`.
+    /// # Errors
+    ///
+    /// This function will return `Err(NewCaptError::TooManyPoints)` if there are too many points to
+    /// be indexed by `I`. It will return `Err(NewCaptError::NonFinite)` if any element of
+    /// `points` is non-finite.
     ///
     /// # Examples
     ///
@@ -415,10 +431,14 @@ where
     /// // note that we are using `u8` as our index type
     /// let opt = captree::Capt::<1, 8, f32, u8>::try_new(&points, (0.0, f32::INFINITY));
     ///
-    /// assert!(opt.is_none());
+    /// assert!(opt.is_err());
     /// ```
-    pub fn try_new(points: &[[A; K]], r_range: (A, A)) -> Option<Self> {
+    pub fn try_new(points: &[[A; K]], r_range: (A, A)) -> Result<Self, NewCaptError> {
         let n2 = points.len().next_power_of_two();
+
+        if points.iter().any(|p| p.iter().any(|x| !x.is_finite())) {
+            return Err(NewCaptError::NonFinite);
+        }
 
         let mut tests = vec![A::INFINITY; n2 - 1].into_boxed_slice();
 
@@ -438,21 +458,23 @@ where
         ]
         .into_boxed_slice();
 
-        Self::new_help(
-            &mut points2,
-            &mut tests,
-            &mut aabbs,
-            &mut afforded,
-            &mut starts,
-            0,
-            0,
-            r_range,
-            Vec::new(),
-            Aabb::ALL,
-        )
-        .ok()?;
+        unsafe {
+            // SAFETY: We tested that `points` contains no `NaN` values.
+            Self::new_help(
+                &mut points2,
+                &mut tests,
+                &mut aabbs,
+                &mut afforded,
+                &mut starts,
+                0,
+                0,
+                r_range,
+                Vec::new(),
+                Aabb::ALL,
+            )?;
+        }
 
-        Some(Self {
+        Ok(Self {
             tests,
             starts,
             afforded: afforded.map(Vec::into_boxed_slice),
@@ -461,7 +483,10 @@ where
     }
 
     #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
-    fn new_help(
+    /// # Safety
+    ///
+    /// This function will contain undefined behavior if `points` contains any `NaN` values.
+    unsafe fn new_help(
         points: &mut [[A; K]],
         tests: &mut [A],
         aabbs: &mut [Aabb<A, K>],
@@ -472,9 +497,8 @@ where
         r_range: (A, A),
         in_range: Vec<[A; K]>,
         cell: Aabb<A, K>,
-    ) -> Result<(), ()> {
+    ) -> Result<(), NewCaptError> {
         let rsq_min = r_range.0.square();
-        let rsq_max = r_range.1.square();
         if let [rep] = *points {
             let z = i - tests.len();
             let aabb = &mut aabbs[z];
@@ -526,7 +550,10 @@ where
                 }
             }
 
-            starts[z + 1] = afforded[0].len().try_into().map_err(|_| ())?;
+            starts[z + 1] = afforded[0]
+                .len()
+                .try_into()
+                .map_err(|_| NewCaptError::TooManyPoints)?;
             return Ok(());
         }
 
@@ -544,9 +571,9 @@ where
             (false, false) => {
                 let mut lo_afford = in_range;
                 let mut hi_afford = lo_afford.clone();
-                lo_afford.retain(|pt| lo_vol.affords(pt, rsq_max));
+                lo_afford.retain(|pt| pt[k] <= test + r_range.1);
                 lo_afford.extend(rhs.iter().filter(|pt| pt[k] <= test + r_range.1));
-                hi_afford.retain(|pt| hi_vol.affords(pt, rsq_max));
+                hi_afford.retain(|pt| pt[k].is_finite() && test - r_range.1 <= pt[k]);
                 hi_afford.extend(
                     lhs.iter()
                         .filter(|pt| pt[k].is_finite() && test - r_range.1 <= pt[k]),
@@ -556,14 +583,14 @@ where
             }
             (false, true) => {
                 let mut lo_afford = in_range;
-                lo_afford.retain(|pt| lo_vol.affords(pt, rsq_max));
+                lo_afford.retain(|pt| pt[k] <= test + r_range.1);
                 lo_afford.extend(rhs.iter().filter(|pt| pt[k] <= test + r_range.1));
 
                 (lo_afford, Vec::new())
             }
             (true, false) => {
                 let mut hi_afford = in_range;
-                hi_afford.retain(|pt| hi_vol.affords(pt, rsq_max));
+                hi_afford.retain(|pt| test - r_range.1 <= pt[k]);
                 hi_afford.extend(
                     lhs.iter()
                         .filter(|pt| pt[k].is_finite() && test - r_range.1 <= pt[k]),
@@ -811,10 +838,6 @@ where
         dist <= rsq
     }
 
-    fn affords(&self, pt: &[A; K], rsq_min: A) -> bool {
-        self.closest_distsq_to(pt) <= rsq_min
-    }
-
     #[doc(hidden)]
     pub fn closest_distsq_to(&self, pt: &[A; K]) -> A {
         let mut dist = A::ZERO;
@@ -847,13 +870,18 @@ where
 #[inline]
 /// Calculate the "true" median (halfway between two midpoints) and partition `points` about said
 /// median along axis `d`.
-fn median_partition<A: Axis, const K: usize>(points: &mut [[A; K]], k: usize) -> A {
-    let (lh, med_hi, _) =
-        points.select_nth_unstable_by(points.len() / 2, |a, b| a[k].partial_cmp(&b[k]).unwrap());
+///
+/// # Safety
+///
+/// This function will result in undefined behavior if `points` contains any `NaN` values.
+unsafe fn median_partition<A: Axis, const K: usize>(points: &mut [[A; K]], k: usize) -> A {
+    let (lh, med_hi, _) = points.select_nth_unstable_by(points.len() / 2, |a, b| {
+        a[k].partial_cmp(&b[k]).unwrap_unchecked()
+    });
     let med_lo = lh
         .iter_mut()
         .map(|p| p[k])
-        .max_by(|a, b| a.partial_cmp(b).unwrap())
+        .max_by(|a, b| a.partial_cmp(b).unwrap_unchecked())
         .unwrap();
     A::in_between(med_lo, med_hi[k])
 }
@@ -957,7 +985,7 @@ mod tests {
     #[allow(clippy::float_cmp)]
     fn does_it_partition() {
         let mut points = vec![[1.0], [2.0], [1.5], [2.1], [-0.5]];
-        let median = median_partition(&mut points, 0);
+        let median = unsafe { median_partition(&mut points, 0) };
         assert_eq!(median, 1.25);
         for p0 in &points[..points.len() / 2] {
             assert!(p0[0] <= median);
