@@ -1,6 +1,6 @@
 use std::{
     mem::size_of,
-    simd::{Simd, SupportedLaneCount},
+    simd::{num::SimdInt, Simd, SupportedLaneCount},
 };
 
 use captree::{Aabb, Axis, AxisSimd};
@@ -99,8 +99,8 @@ impl<const K: usize> PkdTree<K> {
     {
         let indices = forward_pass_simd(&self.tests, needles);
         let mut dists_squared = Simd::splat(0.0);
-        let mut ptrs = Simd::splat(self.points.as_ptr().cast())
-            .wrapping_offset(indices * Simd::splat(K as isize));
+        let mut ptrs =
+            Simd::splat(self.points.as_ptr().cast()).wrapping_add(indices * Simd::splat(K));
         for needle_values in needles {
             let deltas = unsafe { Simd::gather_ptr(ptrs) } - needle_values;
             dists_squared += deltas * deltas;
@@ -217,26 +217,26 @@ impl<const K: usize> PkdTree<K> {
 fn forward_pass_simd<A, const K: usize, const L: usize>(
     tests: &[A],
     centers: &[Simd<A, L>; K],
-) -> Simd<isize, L>
+) -> Simd<usize, L>
 where
     Simd<A, L>: SimdPartialOrd,
     Mask<isize, L>: From<<Simd<A, L> as SimdPartialEq>::Mask>,
     A: Axis + AxisSimd<<Simd<A, L> as SimdPartialEq>::Mask>,
     LaneCount<L>: SupportedLaneCount,
 {
-    let mut test_idxs: Simd<isize, L> = Simd::splat(0);
+    let mut i: Simd<usize, L> = Simd::splat(0);
     let mut k = 0;
     for _ in 0..tests.len().trailing_ones() {
-        let test_ptrs = Simd::splat(tests.as_ptr()).wrapping_offset(test_idxs);
-        let relevant_tests: Simd<A, L> = unsafe { Simd::gather_ptr(test_ptrs) };
-        let cmp_results: Mask<isize, L> = centers[k % K].simd_ge(relevant_tests).into();
+        let test_ptrs = Simd::splat(tests.as_ptr()).wrapping_add(i);
+        let relevant_tests = unsafe { Simd::gather_ptr(test_ptrs) };
+        let cmp: Mask<isize, L> = centers[k].simd_ge(relevant_tests).into();
 
         let one = Simd::splat(1);
-        test_idxs = (test_idxs << one) + one + (cmp_results.to_int() & Simd::splat(1));
+        i = (i << one) + one + (cmp.to_int().cast() & one);
         k = (k + 1) % K;
     }
 
-    test_idxs - Simd::splat(tests.len() as isize)
+    i - Simd::splat(tests.len())
 }
 
 #[cfg(test)]
@@ -289,7 +289,7 @@ mod tests {
         let needles = [Simd::from_array([-1.0, 2.0]), Simd::from_array([-1.0, 2.0])];
         assert_eq!(
             forward_pass_simd(&kdt.tests, &needles),
-            Simd::from_array([0, points.len() as isize - 1])
+            Simd::from_array([0, points.len() - 1])
         );
     }
 

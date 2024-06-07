@@ -34,9 +34,9 @@ def plot_build_times(fname: str):
     plt.title(f"Scaling of CC structure construction time")
     plt.show()
 
-    plt.plot(n_points, captree_build_times * 1e3, label="CAPT")
     plt.plot(n_points, kdt_build_times * 1e3, label="kiddo (k-d tree)")
     plt.plot(n_points, forward_times * 1e3, label="forward tree")
+    plt.plot(n_points, captree_build_times * 1e3, label="CAPT")
 
     plt.legend()
     plt.xlabel("Number of points in cloud")
@@ -57,6 +57,16 @@ def plot_query_times(fname: str, title: str):
     captree_simd_times = np.genfromtxt(fname, usecols=6, delimiter=",")
     forest_times = np.genfromtxt(fname, usecols=range(7, 7 + N_FORESTS), delimiter=",")
 
+    plt.plot(n_points, kdt_times * 1e9, label="kiddo (k-d tree)")
+    plt.plot(n_points, forward_seq_times * 1e9, label="forward tree (sequential)")
+    plt.plot(n_points, forward_simd_times * 1e9, label="forward tree (SIMD)")
+    plt.legend(loc="upper left")
+    plt.semilogy()
+    plt.xlabel("Number of points in cloud")
+    plt.ylabel("Query time (ns)")
+    plt.title(title)
+    plt.show()
+
 
     plt.plot(n_points, kdt_times * 1e9, label="kiddo (k-d tree)")
     plt.plot(n_points, forward_simd_times * 1e9, label="forward tree (SIMD)")
@@ -70,13 +80,10 @@ def plot_query_times(fname: str, title: str):
     plt.xlabel("Number of points in cloud")
     plt.ylabel("Query time (ns)")
     plt.title(title)
-    plt.show()
-
-    plt.plot(n_points, kdt_times * 1e9, label="kiddo (k-d tree)")
     plt.plot(n_points, forward_seq_times * 1e9, label="forward tree (sequential)")
     plt.plot(n_points, forward_simd_times * 1e9, label="forward tree (SIMD)")
-    plt.plot(n_points, captree_seq_times * 1e9, label="captree (sequential)")
-    plt.plot(n_points, captree_simd_times * 1e9, label="captree (SIMD)")
+    plt.plot(n_points, captree_seq_times * 1e9, label="CAPT (sequential)")
+    plt.plot(n_points, captree_simd_times * 1e9, label="CAPT (SIMD)")
 
     plt.legend(loc="upper left")
     plt.semilogy()

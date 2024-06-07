@@ -1,5 +1,65 @@
-//! Efficient, branchless nearest-neighbor trees for robot collision checking.
-
+//! # Collision-Affording Point Trees: SIMD-Amenable Nearest Neighbors for Fast Collision Checking
+//!
+//! This is a Rust implementation of the _collision-affording point tree_ (CAPT), a data structure
+//! for SIMD-parallel collision-checking between spheres and point clouds.
+//!
+//! You may also want to look at the following other sources:
+//!
+//! - [The paper](https://arxiv.org/abs/2406.02807)
+//! - [C++ implementation](https://github.com/KavrakiLab/vamp)
+//! - [Blog post about it](https://www.claytonwramsey.com/blog/captree)
+//! - [Demo video](https://youtu.be/BzDKdrU1VpM)
+//!
+//! If you use this in an academic work, please cite it as follows:
+//!
+//! ```bibtex
+//! @InProceedings{capt,
+//!   title = {Collision-Affording Point Trees: {SIMD}-Amenable Nearest Neighbors for Fast Collision Checking},
+//!   author = {Ramsey, Clayton W. and Kingston, Zachary and Thomason, Wil and Kavraki, Lydia E.},
+//!   booktitle = {Robotics: Science and Systems},
+//!   date = {2024},
+//!   url = {http://arxiv.org/abs/2406.02807},
+//!   note = {To Appear.}
+//! }
+//! ```
+//!
+//! ## Usage
+//!
+//! The core data structure in this library is the [`Capt`], which is a search tree used for
+//! collision checking. [`Capt`]s are polymorphic over dimension and data type. On construction,
+//! they take in a list of points in a point cloud and a _radius range_: a tuple of the minimum and
+//! maximum radius used for querying.
+//!
+//! ```rust
+//! use captree::Capt;
+//!
+//! // list of points in cloud
+//! let points = [[0.0, 1.1], [0.2, 3.1]];
+//! let r_min = 0.05;
+//! let r_max = 2.0;
+//!
+//! let capt = Capt::<2>::new(&points, (r_min, r_max));
+//! ```
+//!
+//! Once you have a `Capt`, you can use it for collision-checking against spheres.
+//! Correct answers are only guaranteed if you collision-check against spheres with a radius inside
+//! the radius range.
+//!
+//! ```rust
+//! # use captree::Capt;
+//! # let points = [[0.0, 1.1], [0.2, 3.1]];
+//! # let capt = Capt::<2>::new(&points, (0.05, 2.0));
+//! let center = [0.0, 0.0]; // center of sphere
+//! let radius0 = 1.0; // radius of sphere
+//! assert!(!capt.collides(&center, radius0));
+//!
+//! let radius1 = 1.5;
+//! assert!(capt.collides(&center, radius1));
+//! ```
+//!
+//! ## License
+//!
+//! TODO!
 #![cfg_attr(feature = "simd", feature(portable_simd))]
 #![warn(clippy::pedantic)]
 #![warn(clippy::nursery)]
@@ -87,7 +147,7 @@ use elain::{Align, Alignment};
 ///             (Self::PlusInf, Self::MinusInf) | (Self::MinusInf, Self::PlusInf) => Self::Real(0),
 ///             (Self::MinusInf, _) | (_, Self::MinusInf) => Self::MinusInf,
 ///             (Self::PlusInf, _) | (_, Self::PlusInf) => Self::PlusInf,
-///             (Self::Real(a), Self::Real(b)) => Self::Real(a + (b - a) / 2)
+///             (Self::Real(a), Self::Real(b)) => Self::Real((a + b) / 2)
 ///         }
 ///     }
 ///
