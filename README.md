@@ -6,6 +6,7 @@ SIMD-parallel collision-checking against point clouds.
 You may also want to look at the following other sources:
 
 - [The paper](https://arxiv.org/abs/2406.02807)
+- [Demo video](https://www.youtube.com/watch?v=BzDKdrU1VpM)
 - [C++ implementation](https://github.com/KavrakiLab/vamp)
 - [Blog post about it](https://www.claytonwramsey.com/blog/captree)
 
@@ -27,7 +28,23 @@ If you use this in an academic work, please cite it as follows:
 The core data structure in this library is the `Capt`, which is a search tree used for collision checking.
 
 ```rust
-use captree
+use captree::Capt;
+
+// list of points in tree
+let points = [[1.0, 1.0], [2.0, 1.0], [3.0, -1.0]];
+
+// range of legal radii for collision-checking
+let radius_range = (0.0, 100.0);
+
+let captree = Capt::new(&points, radius_range);
+
+// sphere centered at (1.5, 1.5) with radius 0.01 does not collide
+assert!(!captree.collides(&[1.5, 1.5], 0.01));
+
+// sphere centered at (1.5, 1.5) with radius 1.0 does collide
+assert!(captree.collides(&[1.5, 1.5], 0.01));
 ```
 
-##
+## License
+
+TODO! - for now, all rights reserved. Still sorting out which license we're using with the lab.
