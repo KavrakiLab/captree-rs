@@ -59,7 +59,7 @@
 //!
 //! ## License
 //!
-//! TODO!
+//! This work is licensed to you under the Polyform Non-Commercial License.
 #![cfg_attr(feature = "simd", feature(portable_simd))]
 #![warn(clippy::pedantic)]
 #![warn(clippy::nursery)]

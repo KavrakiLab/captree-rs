@@ -47,4 +47,5 @@ assert!(captree.collides(&[1.5, 1.5], 0.01));
 
 ## License
 
-TODO! - for now, all rights reserved. Still sorting out which license we're using with the lab.
+This work is licensed to you under the Polyform Non-Commercial License.
+For further details, refer to [LICENSE.md](/LICENSE.md).
