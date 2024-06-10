@@ -15,7 +15,7 @@ If you use this in an academic work, please cite it as follows:
 ```bibtex
 @InProceedings{capt,
   title = {Collision-Affording Point Trees: {SIMD}-Amenable Nearest Neighbors for Fast Collision Checking},
-  author = {Ramsey, Clayton W. and Kingston, Zachary and Tomason, Wil and Kavraki, Lydia E.},
+  author = {Ramsey, Clayton W. and Kingston, Zachary and Thomason, Wil and Kavraki, Lydia E.},
   booktitle = {Robotics: Science and Systems},
   date = {2024},
   url = {http://arxiv.org/abs/2406.02807},
