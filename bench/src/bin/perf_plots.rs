@@ -169,24 +169,24 @@ fn do_row(
     // let (f9, f9_time) = stopwatch(|| PkdForest::<3, 9>::new(points));
     // let (f10, f10_time) = stopwatch(|| PkdForest::<3, 10>::new(points));
 
-    writeln!(
-        f_construct,
-        "{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
-        points.len(),
-        kdt_time.as_secs_f64(),
-        pkdt_time.as_secs_f64(),
-        captree_time.as_secs_f64(),
-        f1_time.as_secs_f64(),
-        f2_time.as_secs_f64(),
-        f3_time.as_secs_f64(),
-        f4_time.as_secs_f64(),
-        f5_time.as_secs_f64(),
-        f6_time.as_secs_f64(),
-        f7_time.as_secs_f64(),
-        f8_time.as_secs_f64(),
-        f9_time.as_secs_f64(),
-        f10_time.as_secs_f64(),
-    )?;
+    // writeln!(
+    //     f_construct,
+    //     "{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
+    //     points.len(),
+    //     kdt_time.as_secs_f64(),
+    //     pkdt_time.as_secs_f64(),
+    //     captree_time.as_secs_f64(),
+    //     f1_time.as_secs_f64(),
+    //     f2_time.as_secs_f64(),
+    //     f3_time.as_secs_f64(),
+    //     f4_time.as_secs_f64(),
+    //     f5_time.as_secs_f64(),
+    //     f6_time.as_secs_f64(),
+    //     f7_time.as_secs_f64(),
+    //     f8_time.as_secs_f64(),
+    //     f9_time.as_secs_f64(),
+    //     f10_time.as_secs_f64(),
+    // )?;
 
     writeln!(
         f_mem,
@@ -274,6 +274,7 @@ fn do_row(
     Ok(())
 }
 
+#[expect(dead_code)]
 fn bench_forest<const T: usize>(
     forest: &PkdForest<3, T>,
     simd_trace: &[([f32x8; 3], f32x8)],
