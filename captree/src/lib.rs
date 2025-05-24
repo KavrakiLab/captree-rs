@@ -137,11 +137,11 @@ use elain::{Align, Alignment};
 ///     const ZERO: Self = Self::Real(0);
 ///     const INFINITY: Self = Self::PlusInf;
 ///     const NEG_INFINITY: Self = Self::MinusInf;
-///     
+///
 ///     fn is_finite(self) -> bool {
 ///         matches!(self, Self::Real(_))
 ///     }
-///     
+///
 ///     fn in_between(self, rhs: Self) -> Self {
 ///         match (self, rhs) {
 ///             (Self::PlusInf, Self::MinusInf) | (Self::MinusInf, Self::PlusInf) => Self::Real(0),
@@ -260,7 +260,6 @@ macro_rules! impl_idx {
 
         #[cfg(feature = "simd")]
         impl IndexSimd for $t {
-            #[must_use]
             unsafe fn to_simd_usize_unchecked<const L: usize>(x: Simd<Self, L>) -> Simd<usize, L>
             where
                 LaneCount<L>: SupportedLaneCount,
@@ -541,7 +540,7 @@ where
         k: usize,
         i: usize,
         r_range: (A, A),
-        in_range: Vec<[A; K]>,
+        mut in_range: Vec<[A; K]>,
         cell: Aabb<A, K>,
     ) -> Result<(), NewCaptError> {
         let rsq_min = r_range.0.square();
@@ -558,6 +557,18 @@ where
 
                 // index into the current lane
                 let mut j = 1;
+
+                let min_sep_sq = rep
+                    .into_iter()
+                    .zip(cell.lo)
+                    .zip(cell.hi)
+                    .map(|((x, l), h)| {
+                        let d1 = x - l;
+                        let d2 = h - x;
+                        (if d1 > d2 { d1 } else { d2 }).square()
+                    })
+                    .fold(A::ZERO, |x, y| x + y);
+                in_range.retain(|p| cell.closest_distsq_to(p) < min_sep_sq);
 
                 // populate affordance buffer if the representative doesn't cover everything
                 if !cell.contained_by_ball(&rep, rsq_min) {

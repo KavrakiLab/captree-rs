@@ -1,6 +1,6 @@
 /target
 /Cargo.lock
-flamegraph.svg
+*.svg
 perf.*
 *.csv
 .vscode
