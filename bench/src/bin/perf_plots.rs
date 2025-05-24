@@ -158,16 +158,16 @@ fn do_row(
 
     let (captree, captree_time) = stopwatch(|| Capt::<3, L, f32, u32>::new(points, r_range));
 
-    let (f1, f1_time) = stopwatch(|| PkdForest::<3, 1>::new(points));
-    let (f2, f2_time) = stopwatch(|| PkdForest::<3, 2>::new(points));
-    let (f3, f3_time) = stopwatch(|| PkdForest::<3, 3>::new(points));
-    let (f4, f4_time) = stopwatch(|| PkdForest::<3, 4>::new(points));
-    let (f5, f5_time) = stopwatch(|| PkdForest::<3, 5>::new(points));
-    let (f6, f6_time) = stopwatch(|| PkdForest::<3, 6>::new(points));
-    let (f7, f7_time) = stopwatch(|| PkdForest::<3, 7>::new(points));
-    let (f8, f8_time) = stopwatch(|| PkdForest::<3, 8>::new(points));
-    let (f9, f9_time) = stopwatch(|| PkdForest::<3, 9>::new(points));
-    let (f10, f10_time) = stopwatch(|| PkdForest::<3, 10>::new(points));
+    // let (f1, f1_time) = stopwatch(|| PkdForest::<3, 1>::new(points));
+    // let (f2, f2_time) = stopwatch(|| PkdForest::<3, 2>::new(points));
+    // let (f3, f3_time) = stopwatch(|| PkdForest::<3, 3>::new(points));
+    // let (f4, f4_time) = stopwatch(|| PkdForest::<3, 4>::new(points));
+    // let (f5, f5_time) = stopwatch(|| PkdForest::<3, 5>::new(points));
+    // let (f6, f6_time) = stopwatch(|| PkdForest::<3, 6>::new(points));
+    // let (f7, f7_time) = stopwatch(|| PkdForest::<3, 7>::new(points));
+    // let (f8, f8_time) = stopwatch(|| PkdForest::<3, 8>::new(points));
+    // let (f9, f9_time) = stopwatch(|| PkdForest::<3, 9>::new(points));
+    // let (f10, f10_time) = stopwatch(|| PkdForest::<3, 10>::new(points));
 
     writeln!(
         f_construct,
@@ -251,22 +251,22 @@ fn do_row(
             captree_total_simd_q_time.as_secs_f64() / trace_len,
         )?;
 
-        let forest_results = [
-            bench_forest(&f1, simd_trace),
-            bench_forest(&f2, simd_trace),
-            bench_forest(&f3, simd_trace),
-            bench_forest(&f4, simd_trace),
-            bench_forest(&f5, simd_trace),
-            bench_forest(&f6, simd_trace),
-            bench_forest(&f7, simd_trace),
-            bench_forest(&f8, simd_trace),
-            bench_forest(&f9, simd_trace),
-            bench_forest(&f10, simd_trace),
-        ];
+        // let forest_results = [
+        //     bench_forest(&f1, simd_trace),
+        //     bench_forest(&f2, simd_trace),
+        //     bench_forest(&f3, simd_trace),
+        //     bench_forest(&f4, simd_trace),
+        //     bench_forest(&f5, simd_trace),
+        //     bench_forest(&f6, simd_trace),
+        //     bench_forest(&f7, simd_trace),
+        //     bench_forest(&f8, simd_trace),
+        //     bench_forest(&f9, simd_trace),
+        //     bench_forest(&f10, simd_trace),
+        // ];
 
-        for query_time in forest_results {
-            write!(f_query, ",{}", query_time.as_secs_f64() / trace_len)?;
-        }
+        // for query_time in forest_results {
+        //     write!(f_query, ",{}", query_time.as_secs_f64() / trace_len)?;
+        // }
 
         writeln!(f_query)?;
     }
