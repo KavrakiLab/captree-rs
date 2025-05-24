@@ -65,7 +65,7 @@ def plot_query_times(fname: str, title: str):
     plt.xlabel("Number of points in cloud")
     plt.ylabel("Query time (ns)")
     plt.title(title)
-    plt.show()
+    plt.savefig(f"{title}_forward.svg")
 
 
     plt.plot(n_points, kdt_times * 1e9, label="kiddo (k-d tree)")
@@ -90,7 +90,7 @@ def plot_query_times(fname: str, title: str):
     plt.xlabel("Number of points in cloud")
     plt.ylabel("Query time (ns)")
     plt.title(title)
-    plt.show()
+    plt.savefig(f"{title}_all.svg")
 
 
 def plot_mem(fname: str):
