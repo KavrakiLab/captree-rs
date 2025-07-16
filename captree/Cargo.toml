@@ -2,6 +2,18 @@
 name = "captree"
 version = "0.1.0"
 edition = "2021"
+description = "SIMD-accelerated nearest-neighbors for point cloud collision checking"
+repository = "https://github.com/KavrakiLab/captree-rs"
+license = "PolyForm-Noncommercial-1.0.0"
+readme = "../README.md"
+keywords = [
+    "robotics",
+    "collision checking",
+    "simd",
+    "nearest neighbor",
+    "point cloud",
+]
+categories = ["no-std", "science", "science::robotics", "algorithms"]
 
 [dev-dependencies]
 rand = "0.9.1"

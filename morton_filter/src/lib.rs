@@ -1,6 +1,6 @@
 //! A filtering algorithm for 3D point clouds.
 
-#![warn(clippy::pedantic)]
+#![warn(clippy::pedantic, clippy::cargo, clippy::nursery, missing_docs)]
 #![cfg_attr(not(test), no_std)]
 
 use core::ops::BitOr;
@@ -23,6 +23,8 @@ pub fn morton_filter(points: &mut Vec<[f32; 3]>, min_sep: f32) {
     }
 }
 
+/// Filter `points` using the Morton filter method using Morton permutation `perm`.
+/// `perm` must be some permutation of [0, 1, 2].
 pub fn filter_permutation(points: &mut Vec<[f32; 3]>, min_sep: f32, perm: [u8; 3]) {
     let mut aabb_min = [f32::INFINITY; 3];
     let mut aabb_max = [f32::NEG_INFINITY; 3];
