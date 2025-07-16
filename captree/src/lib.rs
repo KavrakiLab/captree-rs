@@ -260,7 +260,6 @@ macro_rules! impl_idx {
 
         #[cfg(feature = "simd")]
         impl IndexSimd for $t {
-            #[must_use]
             unsafe fn to_simd_usize_unchecked<const L: usize>(x: Simd<Self, L>) -> Simd<usize, L>
             where
                 LaneCount<L>: SupportedLaneCount,
