@@ -30,9 +30,9 @@ pub fn get_points(n_points_if_no_cloud: usize) -> Box<[[f32; 3]]> {
         (0..n_points_if_no_cloud)
             .map(|_| {
                 [
-                    rng.gen_range::<f32, _>(0.0..1.0),
-                    rng.gen_range::<f32, _>(0.0..1.0),
-                    rng.gen_range::<f32, _>(0.0..1.0),
+                    rng.random_range::<f32, _>(0.0..1.0),
+                    rng.random_range::<f32, _>(0.0..1.0),
+                    rng.random_range::<f32, _>(0.0..1.0),
                 ]
             })
             .collect()
@@ -65,7 +65,7 @@ where
         for l in 0..L {
             let mut seq_needle = [0.0; D];
             for d in 0..3 {
-                let value = rng.gen_range::<f32, _>(0.0..1.0);
+                let value = rng.random_range::<f32, _>(0.0..1.0);
                 seq_needle[d] = value;
                 simd_pts[d].as_mut_array()[l] = value;
             }
@@ -105,13 +105,13 @@ where
     for _ in 0..n_trials / L {
         let mut start_pt = [0.0; D];
         for v in start_pt.iter_mut() {
-            *v = rng.gen_range::<f32, _>(0.0..1.0);
+            *v = rng.random_range::<f32, _>(0.0..1.0);
         }
         let mut simd_pts = [Simd::splat(0.0); D];
         for l in 0..L {
             let mut seq_needle = [0.0; D];
             for d in 0..D {
-                let value = start_pt[d] + rng.gen_range::<f32, _>(-0.02..0.02);
+                let value = start_pt[d] + rng.random_range::<f32, _>(-0.02..0.02);
                 seq_needle[d] = value;
                 simd_pts[d].as_mut_array()[l] = value;
             }

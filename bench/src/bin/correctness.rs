@@ -17,9 +17,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         (0..1 << 16)
             .map(|_| {
                 [
-                    rng.gen_range::<f32, _>(0.0..1.0),
-                    rng.gen_range::<f32, _>(0.0..1.0),
-                    rng.gen_range::<f32, _>(0.0..1.0),
+                    rng.random_range::<f32, _>(0.0..1.0),
+                    rng.random_range::<f32, _>(0.0..1.0),
+                    rng.random_range::<f32, _>(0.0..1.0),
                 ]
             })
             .collect()
@@ -35,11 +35,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .map(|_| {
                 (
                     [
-                        rng.gen_range(0.0..1.0),
-                        rng.gen_range(0.0..1.0),
-                        rng.gen_range(0.0..1.0),
+                        rng.random_range(0.0..1.0),
+                        rng.random_range(0.0..1.0),
+                        rng.random_range(0.0..1.0),
                     ],
-                    rng.gen_range(0.0..=R),
+                    rng.random_range(0.0..=R),
                 )
             })
             .collect()

@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dev-dependencies]
-rand = "0.8.5"
+rand = "0.9.1"
 
 [features]
 simd = []
