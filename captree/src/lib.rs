@@ -961,7 +961,7 @@ unsafe fn median_partition<A: Axis, const K: usize>(points: &mut [[A; K]], k: us
 
 #[cfg(test)]
 mod tests {
-    use rand::Rng;
+    use rand::{rngs::SmallRng, Rng, SeedableRng};
 
     use super::*;
 
@@ -1014,7 +1014,7 @@ mod tests {
     fn fuzz() {
         const R: f32 = 0.04;
         let points = [[0.0, 0.1], [0.4, -0.2], [-0.2, -0.1]];
-        let mut rng = rand::rng();
+        let mut rng = SmallRng::seed_from_u64(1234);
         let t = Capt::<2>::new(&points, (0.0, R));
 
         for _ in 0..10_000 {
