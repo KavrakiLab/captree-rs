@@ -57,6 +57,13 @@
 //! assert!(capt.collides(&center, radius1));
 //! ```
 //!
+//! ## Optional features
+//!
+//! This crate exposes one feature, `simd`, which enables a SIMD-parallel interface for querying
+//! `Capt`s. The `simd` feature requires nightly Rust and therefore should be considered unstable.
+//! This enables the function `Capt::collides_simd`, a parallel collision checker for batches of
+//! search queries.
+//!
 //! ## License
 //!
 //! This work is licensed to you under the Polyform Non-Commercial License.
