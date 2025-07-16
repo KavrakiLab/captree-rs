@@ -1,8 +1,12 @@
-#![warn(clippy::pedantic)]
-
 //! A filtering algorithm for 3D point clouds.
 
-use std::ops::BitOr;
+#![warn(clippy::pedantic)]
+#![cfg_attr(not(test), no_std)]
+
+use core::ops::BitOr;
+
+extern crate alloc;
+use alloc::vec::Vec;
 
 /// Filter out `points` such that points within `min_sep` of each other may be removed.
 pub fn morton_filter(points: &mut Vec<[f32; 3]>, min_sep: f32) {
@@ -49,7 +53,13 @@ pub fn filter_permutation(points: &mut Vec<[f32; 3]>, min_sep: f32, perm: [u8; 3
 }
 
 fn distsq(a: &[f32; 3], b: &[f32; 3]) -> f32 {
-    a.iter().zip(b).map(|(a, b)| (a - b).powi(2)).sum()
+    a.iter()
+        .zip(b)
+        .map(|(a, b)| {
+            let d = a - b;
+            d * d
+        })
+        .sum()
 }
 #[allow(
     clippy::cast_possible_truncation,

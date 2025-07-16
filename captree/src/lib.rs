@@ -68,10 +68,14 @@
 //!
 //! This work is licensed to you under the Polyform Non-Commercial License.
 #![cfg_attr(feature = "simd", feature(portable_simd))]
+#![cfg_attr(not(test), no_std)]
 #![warn(clippy::pedantic)]
 #![warn(clippy::nursery)]
 
-use std::{
+extern crate alloc;
+use alloc::{boxed::Box, vec, vec::Vec};
+
+use core::{
     array,
     fmt::Debug,
     mem::size_of,
@@ -79,7 +83,7 @@ use std::{
 };
 
 #[cfg(feature = "simd")]
-use std::{
+use core::{
     ops::{AddAssign, Mul},
     ptr,
     simd::{
